@@ -62,7 +62,7 @@ vivaldi-workspace-router/
   test/              # matcher / normalize の単体テスト（Node）
 ```
 
-matcher と normalize は Vivaldi に依存しない純粋関数にして、Node で単体テストできるようにする。Vivaldi 固有の API 呼び出しは router.js に閉じ込め、API が変わったときの修正範囲を最小にする。
+matcher と normalize は Vivaldi に依存しない純粋関数にして、Node で単体テストできるようにする。`src/` の各ファイルは ES モジュール（`export`）で書き、`build.sh` が `import` / `export` を取り除いて 1 ファイルに結合する。Vivaldi 固有の API 呼び出しは router.js に閉じ込め、API が変わったときの修正範囲を最小にする。
 
 **使う API（実装前に実機で確認、「検証事項」参照）**
 
@@ -145,6 +145,7 @@ export default {
   debounceMs: 800,
   conflictMarker: '?',
   ignoreWorkspaces: ['個人', 'Inbox'],   // 振り分け先にしないワークスペース
+  minKeywordLength: 3,       // これより短いキーワードは無視して警告（法人格を除いた後の文字数）
   aliases: {
     // ワークスペース名: 追加キーワード（url: 始まりは URL にだけ照合）
     'サンプル工業': ['Sample Industries', 'SMPL', 'url:space=abc123'],
