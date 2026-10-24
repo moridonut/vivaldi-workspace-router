@@ -7,6 +7,7 @@ import CONFIG from './config.js';
 
 const LOG_PREFIX = '[workspace-router]';
 const MANUAL_FLAG = 'wsrManual'; // vivExtData に持たせる独自キー（手で移したタブ）
+const ACTIVATE_VERIFY_MS = 300; // 重複処理の後、既存タブがアクティブになったか確かめるまでの時間
 
 const isWebUrl = (u) => /^https?:\/\//i.test(u || '');
 
@@ -212,8 +213,22 @@ export function createRouter({
       return true;
     }
     log('close duplicate', tab.id, JSON.stringify(tab.title), '→ activate existing', existing.id);
-    await adapter.activate(existing.id);
+    // 先に閉じる。アクティブなタブを後から閉じると、Vivaldi が別のタブを選び直してしまう
     await adapter.close(tab.id);
+    await adapter.activate(existing.id);
+    // それでも Vivaldi の選び直しが後から来ることがあるので、確かめてもう一度アクティブにする
+    setTimer(() => {
+      if (stopped) return;
+      adapter
+        .getTab(existing.id)
+        .then((t) => {
+          if (t && !t.active) {
+            debug('existing tab lost focus after closing duplicate; activating again', existing.id);
+            return adapter.activate(existing.id);
+          }
+        })
+        .catch(() => {});
+    }, ACTIVATE_VERIFY_MS);
     return true;
   }
 
@@ -290,6 +305,7 @@ export function createVivaldiAdapter() {
       url: t.url || t.pendingUrl,
       title: t.title,
       pinned: t.pinned,
+      active: t.active,
       ext: parseExt(t.vivExtData),
     };
 

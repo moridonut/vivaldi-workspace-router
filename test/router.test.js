@@ -44,11 +44,24 @@ function fakeEnv({ tabs = [], windowType = 'normal' } = {}) {
     },
     async activate(id) {
       calls.push(['activate', id]);
+      const apply = () => {
+        for (const t of state.values()) t.active = t.id === id;
+      };
+      // Vivaldi の再現: 画面への反映は少し遅れる
+      env.vivaldiReselectsAfterClose ? env.setTimeout(apply, 50) : apply();
     },
     async close(id) {
       calls.push(['close', id]);
+      const wasActive = state.get(id)?.active;
       state.delete(id);
       listeners.removed?.(id);
+      // Vivaldi の再現: アクティブなタブが閉じられると、少し遅れて隣のタブを選び直す
+      if (wasActive && env.vivaldiReselectsAfterClose) {
+        env.setTimeout(() => {
+          const next = [...state.values()][0];
+          for (const t of state.values()) t.active = t === next;
+        }, 100);
+      }
     },
     onCreated(fn) {
       listeners.created = fn;
@@ -310,6 +323,34 @@ test('移動先に同じページがあれば、新しいタブを閉じて既�
   assert.deepEqual(env.did('close'), [['close', 10]]);
   assert.deepEqual(env.did('activate').at(-1), ['activate', 5]);
   assert.ok(env.state.has(5));
+});
+
+test('重複処理: 先に新しいタブを閉じてから既存タブをアクティブにする', async () => {
+  const env = fakeEnv({ tabs: [{ id: 5, url: SLIDE, title: 'Globex 提案', ext: { workspaceId: WS_B } }] });
+  await startRouter(env);
+  await env.create({ id: 10, url: SLIDE, title: 'Globex 提案' });
+  await env.advance(800);
+  const order = env.calls.filter((c) => c[0] === 'close' || c[0] === 'activate').map((c) => c.join(':'));
+  assert.deepEqual(order.slice(-2), ['close:10', 'activate:5']);
+});
+
+test('重複処理: 閉じた後に Vivaldi が別のタブを選び直しても、既存タブをアクティブにし直す', async () => {
+  const env = fakeEnv({
+    tabs: [
+      { id: 3, url: 'https://example.com/other', title: 'other', ext: { workspaceId: WS_A } },
+      { id: 5, url: SLIDE, title: 'Globex 提案', ext: { workspaceId: WS_B } },
+    ],
+  });
+  env.vivaldiReselectsAfterClose = true;
+  await startRouter(env);
+  // 移動後に新しいタブがアクティブになった状態で、タイトル確定時に重複が見つかる
+  await env.create({ id: 10, url: 'https://example.com/redirect', title: '' });
+  await env.adapter.activate(10);
+  await env.advance(100);
+  await env.update(10, { url: SLIDE, title: 'Globex 提案' });
+  await env.advance(2000);
+  assert.equal(env.state.get(5).active, true);
+  assert.equal(env.state.get(3).active, false);
 });
 
 test('すでに正しいワークスペースにあれば、重複処理だけ行う', async () => {
