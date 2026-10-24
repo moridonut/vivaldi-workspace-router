@@ -370,6 +370,76 @@ test('dedupeUnmatched: true なら、一致なしのタブも今のワークス�
   assert.deepEqual(env.did('close'), [['close', 10]]);
 });
 
+test('わざとの複製: 重複の相手が開いた元のタブ自身なら閉じない（タブを複製）', async () => {
+  const env = fakeEnv({ tabs: [{ id: 5, url: SLIDE, title: 'Globex 提案', ext: { workspaceId: WS_B } }] });
+  await startRouter(env);
+  await env.create({ id: 10, openerTabId: 5, url: SLIDE, title: 'Globex 提案', ext: { workspaceId: WS_B } });
+  await env.advance(800);
+  assert.deepEqual(env.did('close'), []);
+});
+
+test('Drive などほかのタブから開いた重複は閉じる', async () => {
+  const env = fakeEnv({
+    tabs: [
+      { id: 4, url: 'https://drive.google.com/drive/folders/abc', title: 'Folder - Google Drive', ext: { workspaceId: WS_B } },
+      { id: 5, url: SLIDE, title: 'Globex 提案', ext: { workspaceId: WS_B } },
+    ],
+  });
+  await startRouter(env);
+  await env.create({ id: 10, openerTabId: 4, url: SLIDE, title: 'Globex 提案', ext: { workspaceId: WS_B } });
+  await env.advance(800);
+  assert.deepEqual(env.did('close'), [['close', 10]]);
+});
+
+test('開いた元のタブ以外にも同じページがあれば閉じる', async () => {
+  const env = fakeEnv({
+    tabs: [
+      { id: 5, url: SLIDE, title: 'Globex 提案', ext: { workspaceId: WS_B } },
+      { id: 6, url: SLIDE, title: 'Globex 提案', ext: { workspaceId: WS_B } },
+    ],
+  });
+  await startRouter(env);
+  await env.create({ id: 10, openerTabId: 5, url: SLIDE, title: 'Globex 提案', ext: { workspaceId: WS_B } });
+  await env.advance(800);
+  assert.deepEqual(env.did('close'), [['close', 10]]);
+  assert.deepEqual(env.did('activate').at(-1), ['activate', 6]);
+});
+
+test('閉じた直後（1 分以内）に同じページをもう一度開いたら閉じない', async () => {
+  const env = fakeEnv({ tabs: [{ id: 5, url: SLIDE, title: 'Globex 提案', ext: { workspaceId: WS_B } }] });
+  await startRouter(env);
+  await env.create({ id: 10, url: SLIDE, title: 'Globex 提案', ext: { workspaceId: WS_B } });
+  await env.advance(800);
+  assert.deepEqual(env.did('close'), [['close', 10]]);
+  await env.advance(30000);
+  await env.create({ id: 11, url: `${SLIDE}#slide=id.p2`, title: 'Globex 提案', ext: { workspaceId: WS_B } });
+  await env.advance(800);
+  assert.deepEqual(env.did('close'), [['close', 10]]);
+});
+
+test('閉じてから 1 分を過ぎて開いた重複は、また閉じる', async () => {
+  const env = fakeEnv({ tabs: [{ id: 5, url: SLIDE, title: 'Globex 提案', ext: { workspaceId: WS_B } }] });
+  await startRouter(env);
+  await env.create({ id: 10, url: SLIDE, title: 'Globex 提案', ext: { workspaceId: WS_B } });
+  await env.advance(800);
+  await env.advance(61000);
+  await env.create({ id: 11, url: SLIDE, title: 'Globex 提案', ext: { workspaceId: WS_B } });
+  await env.advance(800);
+  assert.deepEqual(env.did('close'), [['close', 10], ['close', 11]]);
+});
+
+test('ドライランでも「閉じたはず」を記録し、2 回目は閉じない判定になる', async () => {
+  const env = fakeEnv({ tabs: [{ id: 5, url: SLIDE, title: 'Globex 提案', ext: { workspaceId: WS_B } }] });
+  await startRouter(env, { dryRun: true });
+  await env.create({ id: 10, url: SLIDE, title: 'Globex 提案', ext: { workspaceId: WS_B } });
+  await env.advance(800);
+  await env.create({ id: 11, url: SLIDE, title: 'Globex 提案', ext: { workspaceId: WS_B } });
+  await env.advance(800);
+  const text = env.logs.map((l) => l.join(' ')).join('\n');
+  assert.equal((text.match(/close duplicate/g) || []).length, 1);
+  assert.match(text, /reopened/);
+});
+
 test('dedupeUnmatched: false（既定）なら、一致なしのタブは重複処理しない', async () => {
   const env = fakeEnv({ tabs: [{ id: 5, url: 'https://example.com/doc?id=1', title: 'doc', ext: { workspaceId: WS_A } }] });
   await startRouter(env);

@@ -46,6 +46,8 @@ pbcopy < dist/workspace-router.js
 | --- | --- | --- |
 | 1 | 別の案件のワークスペースにいる状態で、Slack から案件 B の Slides を開く | `[dry-run] move … → B` |
 | 2 | B にすでに開いている Slides と同じものを開く（`#slide=` 違いも） | `[dry-run] close duplicate … → activate existing …` |
+| 2a | 開いている Slides のタブを右クリック →「タブを複製」 | `created … opener …` と `duplicate of its opener …; keeping`（`opener` が出ない場合は報告する） |
+| 2b | 2 で閉じられた（はずの）Slides を 1 分以内にもう一度開く | `duplicate reopened right after closing; keeping` |
 | 4 | 顧客名を含まない社内資料を開く | `decide … none` |
 | 5 | 2 つの案件の名前を含む資料を開く | `conflict; not moving … candidates: A, B` |
 | 6 | 開いたタブを手で別のワークスペースへ移す | `manual move detected` |

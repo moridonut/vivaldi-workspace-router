@@ -8,6 +8,7 @@ export default {
   switchOnMove: true,        // F7: 移動したら移動先ワークスペースへ切替
   dedupe: true,              // F5: 移動先での重複処理
   dedupeUnmatched: false,    // 一致なしタブも現ワークスペース内で重複処理
+  dedupeReopenGraceMs: 60000, // 重複として閉じた直後にもう一度開いたら、わざととみなして閉じない時間
   routeWindowMs: 30000,      // 作成/ナビゲーション後、自動移動を許す時間
   debounceMs: 800,
   ignoreWorkspaces: [],      // 振り分け先にしないワークスペース

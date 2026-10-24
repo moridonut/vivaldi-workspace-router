@@ -26,6 +26,7 @@ export function createRouter({
     switchOnMove: true,
     dedupe: true,
     dedupeUnmatched: false,
+    dedupeReopenGraceMs: 60000,
     routeWindowMs: 30000,
     debounceMs: 800,
     ignoreWorkspaces: [],
@@ -35,13 +36,15 @@ export function createRouter({
   };
   const debug = (...a) => cfg.debug && log(...a);
 
-  // tabId → { createdAt?, windowStart, lastWs, expectedWs?, manual, timer }
+  // tabId → { createdAt?, openerId?, windowStart, lastWs, expectedWs?, manual, timer }
   // mod の読み込み後に作成されたタブだけが createdAt を持つ（それ以外は閉じない）
   const tabs = new Map();
   let ownWindow = null;
   let paused = !cfg.enabled;
   let stopped = false;
   let indexCache = { key: null, index: null };
+  // 重複キー → 最後に重複として閉じた（ドライランでは閉じたはずの）時刻
+  const recentlyClosed = new Map();
 
   const getState = (id) => tabs.get(id);
 
@@ -73,7 +76,15 @@ export function createRouter({
   function onCreated(tab) {
     if (stopped || tab.windowId !== ownWindow.id) return;
     const t = now();
-    tabs.set(tab.id, { createdAt: t, windowStart: t, lastWs: tab.ext && tab.ext.workspaceId, manual: false, timer: null });
+    tabs.set(tab.id, {
+      createdAt: t,
+      openerId: tab.openerTabId,
+      windowStart: t,
+      lastWs: tab.ext && tab.ext.workspaceId,
+      manual: false,
+      timer: null,
+    });
+    debug('created', tab.id, tab.openerTabId !== undefined ? `opener ${tab.openerTabId}` : 'no opener');
     schedule(tab.id);
   }
 
@@ -166,24 +177,36 @@ export function createRouter({
   }
 
   // 同じページが workspaceId のワークスペースにあれば、このタブを閉じて既存タブを前に出す。
-  // 閉じるのは mod の読み込み後に作成され、作成から routeWindowMs 以内の、判定中のタブだけ
+  // 閉じるのは mod の読み込み後に作成され、作成から routeWindowMs 以内の、判定中のタブだけ。
+  // わざと開いたとみなせるもの（開いた元のタブ自身の複製、閉じた直後の開き直し）は閉じない
   async function dedupe(tab, s, workspaceId) {
     if (!cfg.dedupe) return false;
     const key = dedupeKey(tab.url);
     if (!key) return false;
     const others = await adapter.queryTabs(ownWindow.id);
-    const existing = others.find(
+    const duplicates = others.filter(
       (o) =>
         o.id !== tab.id &&
         !(o.ext || {}).panelId &&
         (o.ext || {}).workspaceId === workspaceId &&
         dedupeKey(o.url) === key
     );
-    if (!existing) return false;
+    if (!duplicates.length) return false;
+    const existing = duplicates.find((o) => o.id !== s.openerId);
+    if (!existing) {
+      debug('duplicate of its opener (e.g. duplicated tab); keeping', tab.id, '→', s.openerId);
+      return false;
+    }
     if (s.createdAt === undefined || now() - s.createdAt > cfg.routeWindowMs) {
       debug('duplicate found but tab is too old to close', tab.id, '→', existing.id);
       return false;
     }
+    const closedAt = recentlyClosed.get(key);
+    if (closedAt !== undefined && now() - closedAt <= cfg.dedupeReopenGraceMs) {
+      log('duplicate reopened right after closing; keeping', tab.id, JSON.stringify(tab.title));
+      return false;
+    }
+    recentlyClosed.set(key, now());
     if (cfg.dryRun) {
       log('[dry-run] close duplicate', tab.id, JSON.stringify(tab.title), '→ activate existing', existing.id);
       return true;
@@ -259,7 +282,16 @@ export function createVivaldiAdapter() {
       return {};
     }
   };
-  const toTab = (t) => t && { id: t.id, windowId: t.windowId, url: t.url || t.pendingUrl, title: t.title, pinned: t.pinned, ext: parseExt(t.vivExtData) };
+  const toTab = (t) =>
+    t && {
+      id: t.id,
+      windowId: t.windowId,
+      openerTabId: t.openerTabId,
+      url: t.url || t.pendingUrl,
+      title: t.title,
+      pinned: t.pinned,
+      ext: parseExt(t.vivExtData),
+    };
 
   const registered = [];
   const listen = (event, fn) => {
