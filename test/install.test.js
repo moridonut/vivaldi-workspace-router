@@ -166,3 +166,66 @@ test('--status', () => {
   assert.match(out, /mod:\s+installed/);
   assert.match(out, /script:\s+up to date/);
 });
+
+// ---- --auto で書き込めないとき（launchd から動いた場合。docs/findings.md I） ----
+
+// 書き込みが拒否される cp と、呼ばれた内容を記録する osascript を PATH の先頭に置く
+function denyWrites(f, button) {
+  const bin = path.join(f.root, 'bin');
+  fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, 'cp'), '#!/bin/bash\necho "cp: ${@: -1}: Operation not permitted" >&2\nexit 1\n', { mode: 0o755 });
+  const log = path.join(f.root, 'osascript.log');
+  fs.writeFileSync(
+    path.join(bin, 'osascript'),
+    `#!/bin/bash\nprintf '%s\\n' "$*" >> "${log}"\necho ---- >> "${log}"\ncase "$*" in *"display dialog"*) echo "button returned:${button}" ;; esac\n`,
+    { mode: 0o755 }
+  );
+  f.env.PATH = `${bin}:${process.env.PATH}`;
+  f.env.WSR_ASKED = path.join(f.root, 'asked');
+  return { calls: () => (fs.existsSync(log) ? read(log).split('----\n').filter(Boolean) : []) };
+}
+
+test('--auto: 書き込めなければダイアログで聞き、「入れ直す」なら iTerm2 で install.sh を実行する', () => {
+  const f = fakeApp();
+  const o = denyWrites(f, '入れ直す');
+  const r = f.run('--auto');
+  assert.equal(r.status, 1);
+  const calls = o.calls();
+  assert.equal(calls.length, 2, calls.join('\n'));
+  assert.match(calls[0], /display dialog/);
+  assert.match(calls[1], /tell application "iTerm"/);
+  assert.match(calls[1], /write text/);
+  assert.ok(calls[1].includes(`${REPO}`) && calls[1].includes('./install.sh'), calls[1]);
+});
+
+test('--auto: 「あとで」なら何もしない。同じバージョンでは 12 時間聞き直さない', () => {
+  const f = fakeApp();
+  const o = denyWrites(f, 'あとで');
+  f.run('--auto');
+  f.run('--auto');
+  const calls = o.calls();
+  assert.equal(calls.length, 1, calls.join('\n'));
+  assert.match(calls[0], /display dialog/);
+});
+
+test('--auto: バージョンが変わったら、12 時間以内でもまた聞く', () => {
+  const f = fakeApp();
+  const o = denyWrites(f, 'あとで');
+  f.run('--auto');
+  const nv = path.join(f.vdir, '8.3.0.1', 'Resources/vivaldi');
+  fs.mkdirSync(nv, { recursive: true });
+  fs.writeFileSync(path.join(nv, 'window.html'), WINDOW_HTML);
+  fs.rmSync(path.join(f.vdir, 'Current'));
+  fs.symlinkSync('8.3.0.1', path.join(f.vdir, 'Current'));
+  f.run('--auto');
+  assert.equal(o.calls().filter((c) => /display dialog/.test(c)).length, 2);
+});
+
+test('--auto: 組み込み済みならダイアログを出さない', () => {
+  const f = fakeApp();
+  f.run();
+  const o = denyWrites(f, '入れ直す');
+  const r = f.run('--auto');
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.deepEqual(o.calls(), []);
+});

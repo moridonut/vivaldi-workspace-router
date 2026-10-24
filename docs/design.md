@@ -180,7 +180,7 @@ Vivaldi を更新するとバージョン番号付きのフォルダが新しく
 - `Versions/` フォルダの変化（`WatchPaths`）
 - ログイン時（`RunAtLoad`）と 1 時間ごと（`StartInterval`）。アプリが丸ごと置き換わる更新では、フォルダの監視が効かなくなる可能性があるための保険。組み込み済みなら何もしないので負荷はない
 
-`--auto` はビルドせず、リポジトリの `dist/` にあるスクリプトを使う（launchd からは `node` が見えないことがあるため）。更新の途中に呼ばれることを考え、`window.html` ができるまで最大 1 分待つ。組み込み直したら「再起動で有効になる」と macOS の通知を出す。書き込みに失敗したら（launchd から動くシェルに「アプリ管理」の権限が効かない場合、`docs/findings.md` I）、ターミナルで `install.sh` を実行するよう通知を出す。ログは `~/Library/Logs/vivaldi-workspace-router.log`。Hammerspoon のパス監視でも代替できるが、Hammerspoon 非起動時にも動く launchd を優先する。
+`--auto` はビルドせず、リポジトリの `dist/` にあるスクリプトを使う（launchd からは `node` が見えないことがあるため）。更新の途中に呼ばれることを考え、`window.html` ができるまで最大 1 分待つ。組み込み直せたら「再起動で有効になる」と macOS の通知を出す。実機では、launchd から動くシェルには「アプリ管理」の許可が効かず書き込めない（`docs/findings.md` I）。そのため書き込みに失敗したら、「入れ直しますか？」のダイアログを出し、「入れ直す」を押すと iTerm2 の新しいウィンドウで `install.sh` を実行する（iTerm2 には許可があるので書き込める）。「あとで」を選ぶか 10 分反応がなければ、同じバージョンについては 12 時間聞き直さない。ログは `~/Library/Logs/vivaldi-workspace-router.log`。Hammerspoon のパス監視でも代替できるが、Hammerspoon 非起動時にも動く launchd を優先する。
 
 アプリバンドルへの書き込みには、macOS の「アプリ管理」の許可が要る（`docs/findings.md` #10）。
 

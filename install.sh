@@ -20,6 +20,9 @@ LABEL="com.github.moridonut.vivaldi-workspace-router"
 AGENTS_DIR="${LAUNCH_AGENTS_DIR:-$HOME/Library/LaunchAgents}"
 PLIST="$AGENTS_DIR/$LABEL.plist"
 LOG="${WSR_LOG:-$HOME/Library/Logs/vivaldi-workspace-router.log}"
+# 入れ直しを聞いたバージョンと時刻（「あとで」を選んだら同じバージョンでは 12 時間聞き直さない）
+ASKED="${WSR_ASKED:-$HOME/Library/Logs/vivaldi-workspace-router.asked}"
+ASK_AGAIN_SEC=43200
 
 MODE="install"
 case "${1:-}" in
@@ -50,6 +53,49 @@ resources_dir() {
     v="$(ls -1 "$VERSIONS" 2>/dev/null | grep -E '^[0-9]+(\.[0-9]+)+$' | sort -t. -k1,1n -k2,2n -k3,3n -k4,4n | tail -1 || true)"
   fi
   [ -n "$v" ] && echo "$VERSIONS/$v/Resources/vivaldi"
+}
+
+# iTerm2 の新しいウィンドウで install.sh を実行する。iTerm2 には「アプリ管理」の許可があるので書き込める。
+# コマンドは argv で渡し、AppleScript の文字列に埋め込まない
+open_terminal() {
+  local cmd
+  cmd="cd $(printf %q "$REPO") && ./install.sh"
+  osascript \
+    -e 'on run argv' \
+    -e 'tell application "iTerm"' \
+    -e 'activate' \
+    -e 'set w to (create window with default profile)' \
+    -e 'tell current session of w to write text (item 1 of argv)' \
+    -e 'end tell' \
+    -e 'end run' \
+    "$cmd"
+}
+
+# launchd から動くシェルはアプリバンドルに書き込めない（docs/findings.md I）ので、ダイアログで聞いて iTerm2 で実行する
+ask_reinstall() {
+  local res="$1" now last_res="" last_at=0 answer
+  now="$(date +%s)"
+  if [ -f "$ASKED" ]; then
+    IFS=$'\t' read -r last_res last_at <"$ASKED" || true
+    if [ "$last_res" = "$res" ] && [ $((now - ${last_at:-0})) -lt $ASK_AGAIN_SEC ]; then
+      echo "already asked for this version; not asking again yet"
+      return 0
+    fi
+  fi
+  if ! command -v osascript >/dev/null 2>&1; then
+    echo "osascript not found; run ./install.sh manually"
+    return 0
+  fi
+  mkdir -p "$(dirname "$ASKED")"
+  printf '%s\t%s\n' "$res" "$now" >"$ASKED"
+  answer="$(osascript -e 'display dialog "Vivaldi が更新され、Workspace Router が外れました。入れ直しますか？\n\n（iTerm2 で install.sh を実行します。終わったら Vivaldi を再起動してください）" buttons {"あとで", "入れ直す"} default button "入れ直す" with title "Vivaldi Workspace Router" giving up after 600' 2>/dev/null || true)"
+  case "$answer" in
+    *入れ直す*)
+      echo "opening iTerm2 to run install.sh"
+      open_terminal || notify "iTerm2 を開けませんでした。ターミナルで install.sh を実行してください"
+      ;;
+    *) echo "reinstall postponed" ;;
+  esac
 }
 
 vivaldi_running() {
@@ -195,10 +241,13 @@ case "$MODE" in
     rc=$?
     set -e
     echo "$out"
-    if [ $rc -eq 10 ]; then
-      notify "Vivaldi の更新後に組み込み直しました。Vivaldi を再起動すると有効になります"
-    elif [ $rc -ne 0 ]; then
-      notify "自動で組み込み直せませんでした。ターミナルで install.sh を実行してください"
+    if [ $rc -eq 0 ] || [ $rc -eq 10 ]; then
+      rm -f "$ASKED"
+      if [ $rc -eq 10 ]; then
+        notify "Vivaldi の更新後に組み込み直しました。Vivaldi を再起動すると有効になります"
+      fi
+    else
+      ask_reinstall "${res:-unknown}"
       exit 1
     fi
     ;;
