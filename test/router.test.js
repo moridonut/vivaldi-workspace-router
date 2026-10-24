@@ -53,6 +53,7 @@ function fakeEnv({ tabs = [], windowType = 'normal' } = {}) {
     async close(id) {
       calls.push(['close', id]);
       const wasActive = state.get(id)?.active;
+      if (wasActive) env.closedWhileActive.push(id);
       state.delete(id);
       listeners.removed?.(id);
       // Vivaldi の再現: アクティブなタブが閉じられると、少し遅れて隣のタブを選び直す
@@ -77,6 +78,7 @@ function fakeEnv({ tabs = [], windowType = 'normal' } = {}) {
 
   const env = {
     adapter,
+    closedWhileActive: [],
     calls,
     state,
     logs: [],
@@ -325,13 +327,20 @@ test('移動先に同じページがあれば、新しいタブを閉じて既�
   assert.ok(env.state.has(5));
 });
 
-test('重複処理: 先に新しいタブを閉じてから既存タブをアクティブにする', async () => {
+test('重複処理: 既存タブがアクティブになってから、裏に回った新しいタブを閉じる', async () => {
   const env = fakeEnv({ tabs: [{ id: 5, url: SLIDE, title: 'Globex 提案', ext: { workspaceId: WS_B } }] });
+  env.vivaldiReselectsAfterClose = true;
   await startRouter(env);
-  await env.create({ id: 10, url: SLIDE, title: 'Globex 提案' });
-  await env.advance(800);
+  await env.create({ id: 10, url: 'https://example.com/redirect', title: '' });
+  await env.adapter.activate(10);
+  await env.advance(100);
+  await env.update(10, { url: SLIDE, title: 'Globex 提案' });
+  await env.advance(2000);
   const order = env.calls.filter((c) => c[0] === 'close' || c[0] === 'activate').map((c) => c.join(':'));
-  assert.deepEqual(order.slice(-2), ['close:10', 'activate:5']);
+  assert.deepEqual(order.slice(-2), ['activate:5', 'close:10']);
+  // 表示中のタブを閉じると Vivaldi がワークスペースを切り替えずに選び直すため、表示中には閉じない
+  assert.deepEqual(env.closedWhileActive, []);
+  assert.equal(env.state.get(5).active, true);
 });
 
 test('重複処理: 閉じた後に Vivaldi が別のタブを選び直しても、既存タブをアクティブにし直す', async () => {

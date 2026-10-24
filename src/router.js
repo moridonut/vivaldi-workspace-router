@@ -8,6 +8,8 @@ import CONFIG from './config.js';
 const LOG_PREFIX = '[workspace-router]';
 const MANUAL_FLAG = 'wsrManual'; // vivExtData に持たせる独自キー（手で移したタブ）
 const ACTIVATE_VERIFY_MS = 300; // 重複処理の後、既存タブがアクティブになったか確かめるまでの時間
+const ACTIVATE_WAIT_MS = 1000; // 既存タブがアクティブになるのを待つ上限
+const POLL_MS = 50;
 
 const isWebUrl = (u) => /^https?:\/\//i.test(u || '');
 
@@ -213,9 +215,12 @@ export function createRouter({
       return true;
     }
     log('close duplicate', tab.id, JSON.stringify(tab.title), '→ activate existing', existing.id);
-    // 先に閉じる。アクティブなタブを後から閉じると、Vivaldi が別のタブを選び直してしまう
-    await adapter.close(tab.id);
+    // 既存タブをアクティブにし（別ワークスペースならワークスペースも切り替わる）、反映を待ってから、
+    // 裏に回った新しいタブを閉じる。表示中のタブを閉じると、Vivaldi がワークスペースを切り替えないまま
+    // 別のタブを選び直してしまう
     await adapter.activate(existing.id);
+    await waitUntilActive(existing.id);
+    await adapter.close(tab.id);
     // それでも Vivaldi の選び直しが後から来ることがあるので、確かめてもう一度アクティブにする
     setTimer(() => {
       if (stopped) return;
@@ -230,6 +235,17 @@ export function createRouter({
         .catch(() => {});
     }, ACTIVATE_VERIFY_MS);
     return true;
+  }
+
+  const sleep = (ms) => new Promise((r) => setTimer(r, ms));
+
+  async function waitUntilActive(id) {
+    for (let waited = 0; waited < ACTIVATE_WAIT_MS; waited += POLL_MS) {
+      const t = await adapter.getTab(id);
+      if (!t || t.active) return;
+      await sleep(POLL_MS);
+    }
+    debug('existing tab did not become active in time', id);
   }
 
   return {
