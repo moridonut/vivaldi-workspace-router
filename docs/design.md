@@ -67,8 +67,8 @@ matcher と normalize は Vivaldi に依存しない純粋関数にして、Node
 **使う API（実装前に実機で確認、「検証事項」参照）**
 
 - イベント: `chrome.tabs.onCreated`、`chrome.tabs.onUpdated`（`url` / `title` / `status` の変化）
-- ワークスペース一覧: 設定値 `vivaldi.workspaces.list`（`vivaldi.prefs.get` で取得、変更も購読）
-- タブの所属: タブの拡張データ（`vivExtData` の JSON）内の `workspaceId`
+- ワークスペース一覧: 設定値 `vivaldi.workspaces.list`（`vivaldi.prefs.get` で取得、変更も購読）。戻り値は `{ value, defaultValue, store }` で、一覧は `.value`（要素は `{ id: number, name, icon }`）
+- タブの所属: タブの拡張データ（`vivExtData` の JSON 文字列）内の `workspaceId`（number）
 - 移動: `chrome.tabs.update(tabId, { vivExtData })` で `workspaceId` を書き換える
 
 ## 振り分けロジック
@@ -83,7 +83,8 @@ matcher と normalize は Vivaldi に依存しない純粋関数にして、Node
 
 **対象外（即終了）**
 
-- 通常ウィンドウ以外（アプリウィンドウ、ポップアップ、ウェブパネル）
+- 通常ウィンドウ以外（`window.type` が `normal` でないもの。アプリウィンドウ、ポップアップ、DevTools）
+- ウェブパネル。通常ウィンドウのタブとして見えるため、`vivExtData.panelId` を持つタブとして除外する
 - ピン留めタブ、`vivaldi://` / `chrome://` / `chrome-extension://` のページ
 - 手動移動済みフラグが立っているタブ（F6）
 - 一時停止中（F8）

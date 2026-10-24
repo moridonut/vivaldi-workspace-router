@@ -34,6 +34,8 @@ Console に1行ずつ入力します。各コマンドは結果を Console に�
 
 ```js
 await spike.env()          // [1] HTML ファイル名、API の有無
+await spike.html()         // [1] window.html / main.html の中身
+spike.privateApis()        // vivaldi.tabsPrivate などの関数名一覧
 await spike.tabs()         // [2] タブの拡張データ
 await spike.workspaces()   // [3] ワークスペース一覧
 await spike.moveTest()     // [4] example.com のテストタブを作り、別ワークスペースへ移す

@@ -133,6 +133,8 @@ window.spike = (() => {
       console.log(`
 推奨順:
   await spike.env()           // [1] HTML ファイル名、API の有無
+  await spike.html()          // [1] window.html / main.html の中身
+  spike.privateApis()         // vivaldi.tabsPrivate 等の関数名
   await spike.tabs()          // [2] タブ拡張データのプロパティ名と workspaceId の形
   await spike.workspaces()    // [3] ワークスペース一覧の設定キーと構造
   await spike.moveTest()      // [4] テストタブを作り、別ワークスペースへ移す → 目視確認
@@ -165,6 +167,33 @@ window.spike = (() => {
       }
       results.env = r;
       console.log('[1] env', r);
+      return r;
+    },
+
+    // [1] UI の HTML の中身（Vivaldi 同梱ファイルなので実値を出してよい）
+    async html() {
+      const r = {};
+      for (const f of ['window.html', 'main.html', 'browser.html']) {
+        try {
+          const res = await fetch(f);
+          r[f] = res.ok ? await res.text() : `HTTP ${res.status}`;
+        } catch (e) {
+          r[f] = 'error: ' + errMsg(e);
+        }
+      }
+      results.html = r;
+      console.log('[1] html', r);
+      return r;
+    },
+
+    // タブ・ウィンドウ移動の公式経路の候補（関数名の一覧だけ）
+    privateApis() {
+      const r = {};
+      for (const ns of ['tabsPrivate', 'windowPrivate', 'sessionsPrivate', 'utilities', 'prefs']) {
+        r[ns] = vivaldi[ns] ? Object.keys(vivaldi[ns]).sort() : null;
+      }
+      results.privateApis = r;
+      console.log('privateApis', r);
       return r;
     },
 
@@ -202,6 +231,10 @@ window.spike = (() => {
         workspaceIdSamples: [...workspaceIdSamples],
         parseErrors,
         sampleExtShape: sample ? shape(extOf(sample).data) : null,
+        // workspaceId を持たないタブの内訳（ワークスペース未所属 / パネル / 内部ページ）
+        withoutWorkspaceId: tabs
+          .filter((t) => !(extOf(t).data && 'workspaceId' in extOf(t).data))
+          .map((t) => ({ windowId: t.windowId, scheme: schemeOf(t.url), panel: !!(extOf(t).data || {}).panelId, pinned: t.pinned })),
       };
       results.tabs = r;
       console.log('[2] tabs', r);
@@ -221,6 +254,8 @@ window.spike = (() => {
           tried[key] = { ok: true, shape: shape(v) };
           if (!list && Array.isArray(v)) { list = v; usedKey = key; }
           if (!list && v && Array.isArray(v.list)) { list = v.list; usedKey = key + ' (.list)'; }
+          // 実機 8.2 では { value, defaultValue, store } で包まれて返る
+          if (!list && v && Array.isArray(v.value)) { list = v.value; usedKey = key + ' (.value)'; }
         } catch (e) {
           tried[key] = { ok: false, error: errMsg(e) };
         }
@@ -323,7 +358,22 @@ window.spike = (() => {
       }
       const win = await call(chrome.windows.getCurrent, {});
       const winExtBefore = extOf(win);
-      const r = { testTabId: id, windowKeys: keysOf(win), windowExtKey: winExtBefore.key, windowExtBeforeShape: shape(winExtBefore.data) };
+      const activeWs = async () => {
+        const [t] = await call(chrome.tabs.query, { active: true, windowId: win.id });
+        return t ? (extOf(t).data || {}).workspaceId : undefined;
+      };
+      const testTab = await getTab(id);
+      const r = {
+        testTabId: id,
+        testTabWorkspaceId: (extOf(testTab).data || {}).workspaceId,
+        activeTabWorkspaceIdBefore: await activeWs(),
+        windowKeys: keysOf(win),
+        windowExtKey: winExtBefore.key,
+        windowExtBeforeShape: shape(winExtBefore.data),
+      };
+      if (r.testTabWorkspaceId === r.activeTabWorkspaceIdBefore) {
+        console.warn('テストタブが今のワークスペースにあります。moveTest が成功してから実行してください');
+      }
       try {
         await call(chrome.tabs.update, id, { active: true });
         r.update = 'ok';
@@ -331,6 +381,7 @@ window.spike = (() => {
         r.update = 'error: ' + errMsg(e);
       }
       await sleep(800);
+      r.activeTabWorkspaceIdAfter = await activeWs();
       const winAfter = await call(chrome.windows.get, win.id, {});
       const winExtAfter = extOf(winAfter);
       r.windowExtChangedKeys = winExtBefore.data && winExtAfter.data
@@ -418,6 +469,7 @@ window.spike = (() => {
         try { h = new URL(u).host; } catch { return null; }
         if (/force\.com$|salesforce\.com$/.test(h)) return 'salesforce';
         if (h === 'docs.google.com') return 'google-docs';
+        if (/atlassian\.net$/.test(h)) return null; // 社内 Confluence は対象外
         if (/celonis/.test(h)) return 'celonis';
         return null;
       };
@@ -466,6 +518,7 @@ window.spike = (() => {
       const onCreated = (t) => {
         born[t.id] = Date.now();
         lastWs[t.id] = extOf(t).data && extOf(t).data.workspaceId;
+        console.log('[created]', t.id);
         events.push({ t: Date.now() - t0, ev: 'created', tab: t.id, windowId: t.windowId, scheme: schemeOf(t.url || t.pendingUrl), opener: t.openerTabId !== undefined, ext: extOf(t).key });
       };
       const onUpdated = (id, info, t) => {
@@ -484,6 +537,7 @@ window.spike = (() => {
           }
         }
         events.push(e);
+        console.log('[updated]', id, e.keys.join(','), e.workspaceIdChanged ? '(workspaceId 変化)' : '');
       };
       const onActivated = (info) => events.push({ t: Date.now() - t0, ev: 'activated', tab: info.tabId });
       const onRemoved = (id) => events.push({ t: Date.now() - t0, ev: 'removed', tab: id });
