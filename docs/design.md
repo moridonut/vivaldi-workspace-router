@@ -166,17 +166,23 @@ Vivaldi を更新するとバージョン番号付きのフォルダが新しく
 
 **install.sh の動作**
 
-1. `/Applications/Vivaldi.app/Contents/Frameworks/Vivaldi Framework.framework/Versions/` 配下で最新バージョンの `Resources/vivaldi/` を特定する
-2. `dist/workspace-router.js` をそこへコピーする
-3. `window.html`（なければ `browser.html`）の `</body>` 直前に `<script src="workspace-router.js"></script>` を挿入する。既にあれば何もしない
-4. 元の HTML は `.bak` として保存し、`--uninstall` で戻せるようにする
-5. Vivaldi 起動中なら「再起動で反映」と通知する（自動再起動はしない）
+1. `/Applications/Vivaldi.app/Contents/Frameworks/Vivaldi Framework.framework/Versions/` の `Current` リンクが指すバージョン（なければ番号がいちばん新しいもの）の `Resources/vivaldi/` を特定する
+2. `build.sh` でビルドし、`dist/workspace-router.js` をそこへコピーする（中身が同じなら何もしない。ビルドは日時を含めず、同じソースからは同じファイルになる）
+3. `window.html` の `</body>` 直前に `<!-- vivaldi-workspace-router --><script src="workspace-router.js"></script>` を挿入する。印があれば何もしない（`browser.html` は 8.2 にはないので扱わない）
+4. 元の HTML は `.bak` として保存し、`--uninstall` で戻す（`.bak` がなければタグの行だけ消す）
+5. Vivaldi 起動中なら「再起動で反映」と表示する（自動再起動はしない）
+6. `--status` で、組み込みの有無、スクリプトが最新か、LaunchAgent の登録を表示する
 
 **更新の検知**
 
-launchd の LaunchAgent で `Versions/` フォルダを `WatchPaths` に指定し、変化したら `install.sh` を実行する。plist の生成と登録も `install.sh --agent` で行う。Hammerspoon のパス監視でも代替できるが、Hammerspoon 非起動時にも動く launchd を優先する。
+`install.sh --agent` が LaunchAgent（`~/Library/LaunchAgents/com.github.moridonut.vivaldi-workspace-router.plist`）を作って登録し、`--remove-agent` で外す。LaunchAgent は `install.sh --auto` を次のときに実行する。
 
-アプリバンドルへの書き込みには、macOS の「アプリ管理」の許可が要る（`docs/findings.md` #10）。ターミナルに許可を付ければ手動の `install.sh` は通るが、launchd から起動した場合に同じ許可が効くかは未確認（同 I）。効かなければ、更新を検知したら通知だけ出し、ユーザーがターミナルから `install.sh` を実行する形に下げる。
+- `Versions/` フォルダの変化（`WatchPaths`）
+- ログイン時（`RunAtLoad`）と 1 時間ごと（`StartInterval`）。アプリが丸ごと置き換わる更新では、フォルダの監視が効かなくなる可能性があるための保険。組み込み済みなら何もしないので負荷はない
+
+`--auto` はビルドせず、リポジトリの `dist/` にあるスクリプトを使う（launchd からは `node` が見えないことがあるため）。更新の途中に呼ばれることを考え、`window.html` ができるまで最大 1 分待つ。組み込み直したら「再起動で有効になる」と macOS の通知を出す。書き込みに失敗したら（launchd から動くシェルに「アプリ管理」の権限が効かない場合、`docs/findings.md` I）、ターミナルで `install.sh` を実行するよう通知を出す。ログは `~/Library/Logs/vivaldi-workspace-router.log`。Hammerspoon のパス監視でも代替できるが、Hammerspoon 非起動時にも動く launchd を優先する。
+
+アプリバンドルへの書き込みには、macOS の「アプリ管理」の許可が要る（`docs/findings.md` #10）。
 
 **注意点**
 

@@ -13,7 +13,8 @@ strip_module() {
 }
 
 {
-  echo "// vivaldi-workspace-router — built $(date -u +%Y-%m-%dT%H:%M:%SZ) from $(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  # 同じソースからは同じファイルになるよう、日時は入れない（install.sh が差分で入れ直しを判断する）
+  echo "// vivaldi-workspace-router — built from $(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
   echo "(() => {"
   echo "'use strict';"
   strip_module src/normalize.js _
@@ -27,5 +28,6 @@ strip_module() {
   echo "})();"
 } > "$OUT"
 
-node --check "$OUT"
+# launchd などから node が見えないときは文法チェックを飛ばす
+if command -v node >/dev/null 2>&1; then node --check "$OUT"; fi
 echo "built $OUT$([ -f src/config.local.js ] && echo ' (with src/config.local.js)')"
