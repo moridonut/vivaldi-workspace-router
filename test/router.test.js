@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createRouter } from '../src/router.js';
+import { createRouter, parseShortcut, matchesShortcut } from '../src/router.js';
 
 const WIN = 1;
 const OTHER_WIN = 2;
@@ -73,6 +73,18 @@ function fakeEnv({ tabs = [], windowType = 'normal' } = {}) {
     onRemoved(fn) {
       listeners.removed = fn;
     },
+    onKeyDown(fn) {
+      listeners.keydown = fn;
+    },
+    onPauseBroadcast(fn) {
+      listeners.pauseBroadcast = fn;
+    },
+    broadcastPause(paused) {
+      calls.push(['broadcastPause', paused]);
+    },
+    toast(text) {
+      calls.push(['toast', text]);
+    },
     removeListeners() {},
   };
 
@@ -125,6 +137,19 @@ function fakeEnv({ tabs = [], windowType = 'normal' } = {}) {
       await flush();
     },
     did: (name) => calls.filter((c) => c[0] === name),
+    async key(e) {
+      const ev = { metaKey: false, altKey: false, shiftKey: false, ctrlKey: false, prevented: false, ...e };
+      ev.preventDefault = () => {
+        ev.prevented = true;
+      };
+      listeners.keydown?.(ev);
+      await flush();
+      return ev;
+    },
+    async otherWindowPaused(paused) {
+      listeners.pauseBroadcast?.(paused);
+      await flush();
+    },
   };
   return env;
 }
@@ -266,7 +291,7 @@ test('一時停止中は何もしない。再開すると次のイベントか�
   router.pause();
   await env.create({ id: 10, url: 'https://example.com/', title: 'Globex' });
   await env.advance(800);
-  assert.deepEqual(env.calls, []);
+  assert.deepEqual(env.calls.filter((c) => ['updateExt', 'activate', 'close'].includes(c[0])), []);
   router.resume();
   await env.create({ id: 11, url: 'https://example.com/', title: 'Globex' });
   await env.advance(800);
@@ -545,4 +570,58 @@ test('stop() の後はイベントを処理しない', async () => {
   await env.update(10, { title: 'Globex' });
   await env.advance(800);
   assert.deepEqual(env.calls, []);
+});
+
+// ---- 一時停止のショートカット（F8） ----------------------------------------
+
+test('parseShortcut / matchesShortcut', () => {
+  const sc = parseShortcut('Cmd+Alt+Shift+P');
+  assert.deepEqual(sc, { meta: true, alt: true, shift: true, ctrl: false, code: 'KeyP' });
+  // ⌥ を押すと e.key は別の文字になるので e.code で比べる
+  assert.equal(matchesShortcut(sc, { metaKey: true, altKey: true, shiftKey: true, ctrlKey: false, code: 'KeyP', key: 'Π' }), true);
+  assert.equal(matchesShortcut(sc, { metaKey: true, altKey: false, shiftKey: true, ctrlKey: false, code: 'KeyP' }), false);
+  assert.equal(matchesShortcut(sc, { metaKey: true, altKey: true, shiftKey: true, ctrlKey: true, code: 'KeyP' }), false);
+  assert.deepEqual(parseShortcut('ctrl+shift+9'), { meta: false, alt: false, shift: true, ctrl: true, code: 'Digit9' });
+  assert.equal(parseShortcut(''), null);
+});
+
+test('ショートカットで一時停止・再開し、ほかのウィンドウへ知らせて表示を出す', async () => {
+  const env = fakeEnv();
+  const router = await startRouter(env);
+  const ev = await env.key({ metaKey: true, altKey: true, shiftKey: true, code: 'KeyP' });
+  assert.equal(ev.prevented, true);
+  assert.equal(router.status().paused, true);
+  assert.deepEqual(env.did('broadcastPause'), [['broadcastPause', true]]);
+  assert.equal(env.did('toast').length, 1);
+  await env.create({ id: 10, url: 'https://example.com/', title: 'Globex' });
+  await env.advance(800);
+  assert.equal(workspaceOf(env, 10), WS_A);
+  await env.key({ metaKey: true, altKey: true, shiftKey: true, code: 'KeyP' });
+  assert.equal(router.status().paused, false);
+  assert.deepEqual(env.did('broadcastPause').at(-1), ['broadcastPause', false]);
+});
+
+test('ほかのキーでは何もしない', async () => {
+  const env = fakeEnv();
+  const router = await startRouter(env);
+  const ev = await env.key({ metaKey: true, shiftKey: true, code: 'KeyP' });
+  assert.equal(ev.prevented, false);
+  assert.equal(router.status().paused, false);
+});
+
+test('toggleShortcut で別のキーにできる', async () => {
+  const env = fakeEnv();
+  const router = await startRouter(env, { toggleShortcut: 'Ctrl+Shift+9' });
+  await env.key({ ctrlKey: true, shiftKey: true, code: 'Digit9' });
+  assert.equal(router.status().paused, true);
+});
+
+test('ほかのウィンドウで一時停止したら、このウィンドウも止まる（知らせ返さない）', async () => {
+  const env = fakeEnv();
+  const router = await startRouter(env);
+  await env.otherWindowPaused(true);
+  assert.equal(router.status().paused, true);
+  assert.deepEqual(env.did('broadcastPause'), []);
+  await env.otherWindowPaused(false);
+  assert.equal(router.status().paused, false);
 });

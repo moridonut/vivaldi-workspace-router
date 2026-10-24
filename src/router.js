@@ -13,6 +13,33 @@ const POLL_MS = 50;
 
 const isWebUrl = (u) => /^https?:\/\//i.test(u || '');
 
+// 'Cmd+Alt+Shift+P' → { meta, alt, shift, ctrl, code: 'KeyP' }。⌥ で e.key が変わるので e.code で比べる
+export function parseShortcut(text) {
+  if (!text) return null;
+  const sc = { meta: false, alt: false, shift: false, ctrl: false, code: null };
+  for (const part of String(text).split('+').map((p) => p.trim().toLowerCase())) {
+    if (part === 'cmd' || part === 'meta') sc.meta = true;
+    else if (part === 'alt' || part === 'option' || part === 'opt') sc.alt = true;
+    else if (part === 'shift') sc.shift = true;
+    else if (part === 'ctrl' || part === 'control') sc.ctrl = true;
+    else if (/^[a-z]$/.test(part)) sc.code = `Key${part.toUpperCase()}`;
+    else if (/^[0-9]$/.test(part)) sc.code = `Digit${part}`;
+    else return null;
+  }
+  return sc.code ? sc : null;
+}
+
+export function matchesShortcut(sc, e) {
+  return (
+    !!sc &&
+    e.code === sc.code &&
+    !!e.metaKey === sc.meta &&
+    !!e.altKey === sc.alt &&
+    !!e.shiftKey === sc.shift &&
+    !!e.ctrlKey === sc.ctrl
+  );
+}
+
 // adapter: Vivaldi とのやり取り（createVivaldiAdapter と同じ形の偽物をテストで使う）
 // tab は { id, windowId, url, title, pinned, ext }。ext は vivExtData を parse したもの
 export function createRouter({
@@ -35,6 +62,7 @@ export function createRouter({
     ignoreWorkspaces: [],
     aliases: {},
     debug: false,
+    toggleShortcut: 'Cmd+Alt+Shift+P',
     ...config,
   };
   const debug = (...a) => cfg.debug && log(...a);
@@ -254,6 +282,13 @@ export function createRouter({
 
   const sleep = (ms) => new Promise((r) => setTimer(r, ms));
 
+  function setPaused(p, { broadcast = false, toast = false } = {}) {
+    paused = !!p;
+    log(paused ? 'paused' : 'resumed');
+    if (broadcast && adapter.broadcastPause) adapter.broadcastPause(paused);
+    if (toast && adapter.toast) adapter.toast(paused ? 'Workspace Router: 一時停止' : 'Workspace Router: 再開');
+  }
+
   async function waitUntilActive(id) {
     for (let waited = 0; waited < ACTIVATE_WAIT_MS; waited += POLL_MS) {
       const t = await adapter.getTab(id);
@@ -274,6 +309,17 @@ export function createRouter({
       adapter.onCreated(onCreated);
       adapter.onUpdated(onUpdated);
       adapter.onRemoved(onRemoved);
+      const shortcut = parseShortcut(cfg.toggleShortcut);
+      if (cfg.toggleShortcut && !shortcut) log('config warning invalid toggleShortcut', JSON.stringify(cfg.toggleShortcut));
+      if (shortcut && adapter.onKeyDown) {
+        adapter.onKeyDown((e) => {
+          if (stopped || !matchesShortcut(shortcut, e)) return;
+          e.preventDefault();
+          setPaused(!paused, { broadcast: true, toast: true });
+        });
+      }
+      // 一時停止はウィンドウをまたいで共有する（mod はウィンドウごとに動く）
+      if (adapter.onPauseBroadcast) adapter.onPauseBroadcast((p) => !stopped && setPaused(p, { broadcast: false }));
       const index = await getIndex();
       log(
         `started (window ${ownWindow.id}${cfg.dryRun ? ', DRY RUN' : ''}${paused ? ', paused' : ''});`,
@@ -288,15 +334,13 @@ export function createRouter({
       adapter.removeListeners();
     },
     pause() {
-      paused = true;
-      log('paused');
+      setPaused(true, { broadcast: true });
     },
     resume() {
-      paused = false;
-      log('resumed');
+      setPaused(false, { broadcast: true });
     },
     toggle() {
-      paused ? this.resume() : this.pause();
+      setPaused(!paused, { broadcast: true, toast: true });
       return !paused;
     },
     setDryRun(on) {
@@ -341,6 +385,8 @@ export function createVivaldiAdapter() {
     };
 
   const registered = [];
+  const domListeners = [];
+  const channel = new BroadcastChannel('vivaldi-workspace-router');
   const listen = (event, fn) => {
     event.addListener(fn);
     registered.push([event, fn]);
@@ -400,8 +446,32 @@ export function createVivaldiAdapter() {
     onRemoved(fn) {
       listen(chrome.tabs.onRemoved, (id) => fn(id));
     },
+    // 標準の DOM イベント。ページの中にフォーカスがあるときに届くかは docs/findings.md M
+    onKeyDown(fn) {
+      const handler = (e) => fn(e);
+      document.addEventListener('keydown', handler, true);
+      domListeners.push(() => document.removeEventListener('keydown', handler, true));
+    },
+    // 同じ UI（chrome-extension://…）のウィンドウ同士で一時停止を共有する
+    onPauseBroadcast(fn) {
+      channel.onmessage = (e) => e.data && typeof e.data.paused === 'boolean' && fn(e.data.paused);
+    },
+    broadcastPause(paused) {
+      channel.postMessage({ paused });
+    },
+    toast(text) {
+      const el = document.createElement('div');
+      el.textContent = text;
+      el.style.cssText =
+        'position:fixed;right:16px;bottom:16px;z-index:2147483647;padding:8px 14px;border-radius:6px;' +
+        'background:rgba(30,30,30,.92);color:#fff;font:13px -apple-system,sans-serif;pointer-events:none;';
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 1800);
+    },
     removeListeners() {
       for (const [event, fn] of registered.splice(0)) event.removeListener(fn);
+      for (const off of domListeners.splice(0)) off();
+      channel.close();
     },
   };
 }

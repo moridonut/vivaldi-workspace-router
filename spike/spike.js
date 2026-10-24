@@ -594,6 +594,35 @@ window.spike = (() => {
       }, seconds * 1000);
     },
 
+    // [M] ショートカットのキーが UI まで届くか。document の keydown と tabsPrivate.onKeyboardShortcut を記録する
+    keys(seconds = 20) {
+      const events = [];
+      const t0 = Date.now();
+      const onKey = (e) => {
+        if (!(e.metaKey || e.ctrlKey || e.altKey)) return; // 修飾キーなしの入力は記録しない
+        const r = { t: Date.now() - t0, src: 'document.keydown', code: e.code, meta: e.metaKey, alt: e.altKey, shift: e.shiftKey, ctrl: e.ctrlKey, focus: document.activeElement && document.activeElement.tagName };
+        events.push(r);
+        console.log('[keys]', r);
+      };
+      document.addEventListener('keydown', onKey, true);
+      const ks = vivaldi.tabsPrivate && vivaldi.tabsPrivate.onKeyboardShortcut;
+      const onShortcut = (...args) => {
+        const r = { t: Date.now() - t0, src: 'tabsPrivate.onKeyboardShortcut', argShapes: args.map((a) => shape(a)), args };
+        events.push(r);
+        console.log('[keys]', r);
+      };
+      if (ks) ks.addListener(onShortcut);
+      console.log(`${seconds}秒間キーを記録します。次の 2 通りで ⌘⌥⇧P を押してください:
+  a) アドレスバーをクリックしてから押す
+  b) Slides などのページ本文をクリックしてから押す`);
+      setTimeout(() => {
+        document.removeEventListener('keydown', onKey, true);
+        if (ks) ks.removeListener(onShortcut);
+        results.keys = events.map(({ args, ...rest }) => rest);
+        console.log('keys 終了', events.length, 'events');
+      }, seconds * 1000);
+    },
+
     // 目視確認の結果を記録
     visual(check, note) {
       if (!results[check]) results[check] = {};
