@@ -127,7 +127,7 @@ test('別名: 設定のキーは正規化して照合する（全角や法人格
 test('url: 別名は URL にだけ照合する', () => {
   const index = buildIndex([ws(1, 'アクメ')], { aliases: { 'アクメ': ['url:acme.bi.example.com'] } });
   assert.deepEqual(
-    ids(index, { title: 'Celonis | Apps', url: 'https://acme.bi.example.com/package-manager/ui/views/ui/spaces' }),
+    ids(index, { title: 'Dashboard | Apps', url: 'https://acme.bi.example.com/apps/views' }),
     [1]
   );
   assert.deepEqual(ids(index, { title: 'acme.bi.example.com のメモ', url: 'https://example.com/' }), []);

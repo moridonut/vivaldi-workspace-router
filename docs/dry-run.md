@@ -52,7 +52,7 @@ pbcopy < dist/workspace-router.js
 | 5 | 2 つの案件の名前を含む資料を開く | `conflict; not moving … candidates: A, B` |
 | 6 | 開いたタブを手で別のワークスペースへ移す | `manual move detected` |
 | 7 | Salesforce の商談を開く | 最初は `none` でも、タイトル確定後に `[dry-run] move … → 正しい案件` |
-| 8 | Celonis のアプリを開く | `url:` 別名で `[dry-run] move` |
+| 8 | タイトルに顧客名が出ないページ（Celonis のアプリなど）を開く | `url:` 別名で `[dry-run] move` |
 | 9 | ウェブパネルや PWA でページを開く | 何も出ない（`debug: true` なら `skip … web panel`） |
 
 誤った判定があれば、そのログ行（顧客名は伏せて構わない）を Claude Code に貼る。

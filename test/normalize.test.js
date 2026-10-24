@@ -92,7 +92,7 @@ const UUID2 = '7d6c5b4a-3e2f-4a1b-8c9d-0e1f2a3b4c5d';
 test('Celonis: リソース ID のない一覧ページは重複処理しない（null）', () => {
   assert.equal(dedupeKey(CEL), null);
   assert.equal(dedupeKey(`${CEL}/`), null);
-  assert.equal(dedupeKey('https://myteam.eu-1.celonis.cloud/package-manager/ui/views/ui/spaces?x=1'), null);
+  assert.equal(dedupeKey(`${CEL}?x=1`), null);
 });
 
 test('Celonis: 同じリソースはクエリ・ハッシュ・末尾のスラッシュを無視する', () => {
