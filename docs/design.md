@@ -121,7 +121,7 @@ mod が移動した直後の `workspaceId` をタブごとに記録する。以�
 | --- | --- | --- |
 | Google Slides / Docs / Sheets | `docs.google.com/presentation/d/<id>/edit#slide=...` | 種類 + `<id>`（`#slide=` や `/edit` は無視） |
 | Salesforce Lightning | `*.lightning.force.com/lightning/r/Opportunity/<id>/view` | オブジェクト種別 + レコード ID（15/18 桁は先頭 15 桁で比較） |
-| Celonis | ダッシュボード / ビューの URL | パスのリソース ID 部分。実際の URL 構造を検証してから決める |
+| Celonis | `<team>.<region>.celonis.cloud/package-manager/ui/views/ui/spaces/...` | ホスト + パスのリソース ID 部分。ID がないとき（スペース一覧など）は重複処理しない。振り分けは、タイトルに顧客名が出ないので `url:` 別名（URL の中の案件ごとに異なる部分）を使う |
 | その他 | 任意 | `#` 以降と `utm_*` 等の追跡パラメータを除いた URL |
 
 安全策として以下を守る。
