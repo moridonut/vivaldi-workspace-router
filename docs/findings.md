@@ -38,7 +38,7 @@
 | G | `window.html` はブラウザウィンドウごとに読み込まれるか | ⚠️ | ウィンドウを 2 つ開くと、`vivaldi://inspect/#apps` に `window.html` が 2 つ並んだ。**mod はウィンドウの数だけ動く**。`chrome.tabs` のイベントはブラウザ全体のタブについて全員に届くため、何もしないと同じタブを複数の mod が同時に判定してしまう。各 mod は自分のウィンドウ（`tab.windowId`）のタブだけを扱う。自分のウィンドウ ID の取り方は K で確かめる |
 | K | mod が自分のウィンドウ ID を取る方法 | ✅ | ウィンドウ 2 つのそれぞれの DevTools で、`chrome.windows.getCurrent` と `vivaldi.windowPrivate.getCurrentId` が、どちらも自分のウィンドウの ID を返した（`1895453107` と `1895453310`）。標準 API の `chrome.windows.getCurrent` を使う |
 | H | Vivaldi 独自 API の候補 | 参考 | `vivaldi.tabsPrivate` に `onExtDataChanged`、`notifyActiveWorkspace`、`update`、`move` がある。#4 の目視で表示が追従しなかった場合に調べる候補。引数が分からないため、今は呼ばない |
-| I | launchd（LaunchAgent）から動かした `install.sh` も、アプリバンドルに書き込めるか | ⬜ | 「アプリ管理」の許可はアプリ単位で付く。ターミナルで手動実行するときは通るが、launchd が `/bin/bash` を直接起動すると、ターミナルの許可を引き継がず拒否される可能性がある。Phase 4 で LaunchAgent を作るときに実機で確かめる。だめなら、ターミナル経由で動かすか、更新を検知したら通知だけ出してユーザーが手で `install.sh` を実行する形に下げる |
+| I | launchd（LaunchAgent）から動かした `install.sh` も、アプリバンドルに書き込めるか | ❌ | 書き込めない。`./install.sh --uninstall` の後に `launchctl kickstart` で `install.sh --auto` を動かすと、`cp: …/Resources/vivaldi/workspace-router.js: Operation not permitted` になった（2026-10-24、Vivaldi 8.2.4133.94）。「アプリ管理」の許可はターミナルに付いているので、launchd が直接起動した `/bin/bash` には効かない。組み込み済みかどうかの確認（読み取り）はできるので、LaunchAgent は「入れ直しが必要」と検知して知らせる役にとどめる |
 
 ## Phase 1 のまとめ
 
