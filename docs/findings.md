@@ -14,11 +14,11 @@
 | 1 | mod を読み込む HTML のファイル名 | ✅ | `window.html`。中身は CSS の `<link>` だけで `<script>` は 1 つもない。React 本体（`bundle.js`）は、画面に出ない `main.html` が読み込んでいる。`chrome.tabs` と `vivaldi.*` は `window.html` の文脈で使えたので、mod の挿入先は設計どおり `window.html` でよい。ウィンドウごとに読み込まれるか（G）は未確認 |
 | 2 | タブの拡張データのプロパティ名と `workspaceId` の形 | ✅ | `tab.vivExtData`、JSON 文字列。`workspaceId` は number（例 `1768800948103`、作成時刻のミリ秒と思われる）。ほかのキーは `ext_id`、`parent_ext_id`、`restoreStatus`、`panelId` |
 | 3 | ワークスペース一覧の設定キーと構造、変更の購読 | ⚠️ | キーは `vivaldi.workspaces.list`。戻り値は `{ value, defaultValue, store }` で、一覧は `.value`。要素は `{ id: number, name: string, icon: string }`、6 件。`vivaldi.prefs.onChanged` は切替時に発火するが、通知の中身はまだ分からない（2 回目のスニペットでは読めなかった。修正済み） |
-| 4 | `workspaceId` を書き換えたとき、タブバーが即座に追従するか | ⬜ | `chrome.tabs.update(id, { vivExtData })` はエラーなく成功し、値も残った（`persisted: true`）。タブバーの見え方は未記録 |
-| 5 | 別ワークスペースのタブを `active: true` にするとワークスペースも切り替わるか | ⬜ | アクティブなタブの `workspaceId` は、移動先のものに変わった（before `1768800948103` → after `1790727420515`）。画面のワークスペース表示も切り替わったかは未記録 |
+| 4 | `workspaceId` を書き換えたとき、タブバーが即座に追従するか | ✅ | `chrome.tabs.update(id, { vivExtData: JSON.stringify({...ext, workspaceId}) })` で、タブは即座に今のタブバーから消え、移動先のワークスペースに表示された。移動にはこの方法を使う |
+| 5 | 別ワークスペースのタブを `active: true` にするとワークスペースも切り替わるか | ✅ | 即座に切り替わった。F7（移動先へ切替）と F5（既存タブを前に出す）は `chrome.tabs.update(id, { active: true })` だけで実現できる |
 | 6 | ハイバネート中のタブでも URL とタイトルが取れるか | ✅ | 7/7 件で `url`・`title`・`workspaceId` が取れた。`status` は `"unloaded"` |
 | 7 | ウェブパネルとアプリウィンドウを `chrome.tabs` の情報だけで除外できるか | ⚠️ | アプリ（PWA）ウィンドウは `window.type === "app"`、DevTools は `"devtools"` で除外できる。ウェブパネルは通常ウィンドウの中のタブとして見え、`vivExtData.panelId` を持つ（`workspaceId` はない）。設計書の除外条件を更新済み |
-| 8 | 実タイトルに顧客名が入るか（Salesforce 商談 / Slides / Celonis） | ⚠️ | 17 件（Slides 10、Salesforce 商談 3、Celonis 4）のどのタイトルにも、6 つのワークスペース名はそのままでは出てこなかった。ユーザーの目視では、**タイトルには顧客名が英語名や略称で入っている**（例：ワークスペースは日本語名、タイトルは英語名）。F3 の別名で解決できるので、方式はこのままでよい。ただし別名は「必要なら足す」ものではなく、**実質ほぼ全案件で書くもの**になる |
+| 8 | 実タイトルに顧客名が入るか（Salesforce 商談 / Slides / Celonis） | ⚠️ | 3 回目に目視で確かめた結果は次のとおり。Slides は、日本語の顧客名＋「様」（例：`2026/10/14 <顧客名>様向け…`）か、英語名・ハイフンつなぎの英語名（例：`<customer>-…`）が入る。Salesforce 商談は、英大文字の社名＋法人格（例：`<CUSTOMER> LTD.-…`）が入り、英語名と同じ表記のワークスペースでは一致した。**Celonis のアプリはタイトルが `Celonis \| Apps` 固定で、顧客名が入らない**ため、`url:` 別名が必須になる。ほかの案件は、英語名・略称の別名を足せば拾える |
 | 9 | Celonis の URL 構造（重複キーに使う部分） | ⬜ | 開いていた 3 件は、どれも `https://<team>.<region>.celonis.cloud/package-manager/ui/views/ui/spaces` というスペース一覧ページで、ID を含まなかった。タイトルも 14 文字の共通の名前と思われる。個別のビューやダッシュボードを開いた状態で再取得する |
 | 10 | アプリバンドルへの書き込みが会社の Mac で許可されるか | ✅ | 初回は `Operation not permitted` で拒否された。システム設定 → プライバシーとセキュリティ → アプリ管理 でターミナルを許可したところ、書き込めるようになった（Kandji の MDM は、この権限を固定していなかった）。ただし、この許可はターミナルに付くもので、launchd から動かす `install.sh` には効かない可能性がある（I） |
 
@@ -30,6 +30,7 @@
 | B | Salesforce / Slides でタイトルが確定するまでの時間 | ✅ | Salesforce 商談は、作成から 0.9 秒で仮のタイトル（20 文字）、4.7 秒で本来のタイトル（86 文字）が来た。Slides は 1.3 秒で確定した。タイトルが変わるたびに 800ms デバウンスして判定し直す設計で足りる。30 秒の受付時間にも十分収まる |
 | C | 今アクティブなワークスペースの取得方法 | ✅ | ウィンドウの `vivExtData` には workspace 関連のキーがない。アクティブなタブの `workspaceId` を使えば取れる（#5 の before/after で値が変わった） |
 | D | `vivaldi.prefs.get` がコールバック形式か Promise 形式か | ✅ | どちらかで値が返る（どちらかは区別していない）。両対応の呼び方にしておく |
+| J | ハイバネート中の Salesforce タブのタイトル | 参考 | ハイバネート中の商談タブは、タイトルが仮の `Lightning Experience` のまま残る。自動移動は作成から 30 秒以内のタブに限るため、判定には影響しない |
 | E | `workspaceId` を持たないタブ | ✅ | 通常ウィンドウで `workspaceId` がないのは、`chrome://` のタブとウェブパネルだけだった。https の通常タブは、すべてどこかのワークスペースに属していた |
 | F | 新しいタブの作成直後のイベント | ✅ | `onCreated` の 1〜7ms 後に、キーが `["vivExtData"]` だけの `onUpdated` が必ず来る（`workspaceId` は作成時のまま）。Vivaldi が作成直後に拡張データを付ける動きと思われる。このイベントを F6 の手動移動と取り違えないよう、`workspaceId` が実際に変わったかで判断する |
 | G | `window.html` はブラウザウィンドウごとに読み込まれるか | ⬜ | `<!-- Vivaldi window document -->` とあるので、ウィンドウごとに 1 つずつ読み込まれる可能性が高い。そうなら mod も複数動くことになり、それぞれが自分のウィンドウのタブだけを扱う必要がある |
