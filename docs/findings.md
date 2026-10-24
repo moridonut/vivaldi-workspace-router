@@ -2,7 +2,7 @@
 
 `docs/design.md`「実装前に検証すべき事項」の実機確認結果。手順は `spike/README.md`。
 
-- 検証日: 2026-10-24（1 回目、2 回目）
+- 検証日: 2026-10-24（1〜3 回目と個別の確認）
 - Vivaldi バージョン: 8.2.4133.84（Chromium 152）
 - macOS: Intel Mac（UA 上は 10_15_7 固定のため実バージョン不明）、Kandji の MDM 管理下（DEP 登録）
 - UI DevTools の開き方: （未記録）
@@ -34,9 +34,27 @@
 | E | `workspaceId` を持たないタブ | ✅ | 通常ウィンドウで `workspaceId` がないのは、`chrome://` のタブとウェブパネルだけだった。https の通常タブは、すべてどこかのワークスペースに属していた |
 | F | 新しいタブの作成直後のイベント | ✅ | `onCreated` の 1〜7ms 後に、キーが `["vivExtData"]` だけの `onUpdated` が必ず来る（`workspaceId` は作成時のまま）。Vivaldi が作成直後に拡張データを付ける動きと思われる。このイベントを F6 の手動移動と取り違えないよう、`workspaceId` が実際に変わったかで判断する |
 | G | `window.html` はブラウザウィンドウごとに読み込まれるか | ⚠️ | ウィンドウを 2 つ開くと、`vivaldi://inspect/#apps` に `window.html` が 2 つ並んだ。**mod はウィンドウの数だけ動く**。`chrome.tabs` のイベントはブラウザ全体のタブについて全員に届くため、何もしないと同じタブを複数の mod が同時に判定してしまう。各 mod は自分のウィンドウ（`tab.windowId`）のタブだけを扱う。自分のウィンドウ ID の取り方は K で確かめる |
-| K | mod が自分のウィンドウ ID を取る方法 | ⬜ | 候補は `chrome.windows.getCurrent` と `vivaldi.windowPrivate.getCurrentId`。ウィンドウ 2 つのそれぞれの DevTools で実行し、別々の ID が返るかを確かめる |
+| K | mod が自分のウィンドウ ID を取る方法 | ✅ | ウィンドウ 2 つのそれぞれの DevTools で、`chrome.windows.getCurrent` と `vivaldi.windowPrivate.getCurrentId` が、どちらも自分のウィンドウの ID を返した（`1895453107` と `1895453310`）。標準 API の `chrome.windows.getCurrent` を使う |
 | H | Vivaldi 独自 API の候補 | 参考 | `vivaldi.tabsPrivate` に `onExtDataChanged`、`notifyActiveWorkspace`、`update`、`move` がある。#4 の目視で表示が追従しなかった場合に調べる候補。引数が分からないため、今は呼ばない |
 | I | launchd（LaunchAgent）から動かした `install.sh` も、アプリバンドルに書き込めるか | ⬜ | 「アプリ管理」の許可はアプリ単位で付く。ターミナルで手動実行するときは通るが、launchd が `/bin/bash` を直接起動すると、ターミナルの許可を引き継がず拒否される可能性がある。Phase 4 で LaunchAgent を作るときに実機で確かめる。だめなら、ターミナル経由で動かすか、更新を検知したら通知だけ出してユーザーが手で `install.sh` を実行する形に下げる |
+
+## Phase 1 のまとめ
+
+設計の前提は、実機の Vivaldi 8.2 ですべて成り立った。Phase 2 に進める。
+
+- 移動・切替・既存タブを前に出す処理は、どれも標準の `chrome.tabs.update` だけでできる（#4、#5）
+- 手動移動は `onUpdated` の `changeInfo.vivExtData` で検出できる（A、F）
+- mod は `window.html` に入れる。ウィンドウごとに動くので、自分のウィンドウ（`chrome.windows.getCurrent`）のタブだけを扱う（#1、G、K）
+- タイトルには英語名や略称で顧客名が入るので、別名はほぼ全案件で書く。Celonis のようにタイトルに顧客名が出ないページは `url:` 別名で振り分ける（#8、#9）
+- アプリバンドルへの書き込みは、ターミナルに「アプリ管理」を許可すれば通る（#10）
+
+残っている未確認事項と、確かめるフェーズは次のとおり。
+
+| 項目 | 確かめるフェーズ | 結果が悪かった場合 |
+| --- | --- | --- |
+| I：launchd から動かした `install.sh` が書き込めるか | Phase 4 | 更新を検知したら通知だけ出し、ユーザーが手で実行する |
+| #9：個別の Celonis アプリで URL にリソース ID が出るか | Phase 3 のドライラン | ID がなければ Celonis は重複処理しない（設計済み） |
+| #3：`vivaldi.prefs.onChanged` の通知の中身 | 使わない | 判定のたびに `vivaldi.prefs.get` で一覧を読み直す（イベント駆動の判定時に 1 回だけなので負荷は小さい） |
 
 ## 詳細
 
@@ -96,4 +114,5 @@
 - 「手動移動の検出」：作成直後の拡張データ通知（F）を手動移動と取り違えない旨を追記した
 - 「設定ファイル仕様」：実際のタイトルは英語名・略称が多く、別名はほぼ全案件で書く前提だと明記した（#8）
 - 「インストールとアップデート追従」：アプリ管理の許可が必要なこと、launchd から動かす場合は別途確認が必要なことを追記した（#10、I）
+- 「全体アーキテクチャ」：ワークスペース一覧は購読せず、判定のたびに読み直すことにした（#3）
 - 「全体アーキテクチャ」「振り分けロジック」：mod がウィンドウごとに動くので、自分のウィンドウのタブだけを扱うと追記した（G）

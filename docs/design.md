@@ -46,7 +46,7 @@ Vivaldi 標準のワークスペースルールは URL（ドメイン）でし�
 
 ## 全体アーキテクチャ
 
-Vivaldi の UI 自体が Web 技術で作られており、その HTML（`window.html`、古い版では `browser.html`）に自作 JS を読み込ませるのが mod の仕組み。この JS はブラウザ UI の権限で動き、`chrome.tabs` と Vivaldi 独自の `vivaldi.*` API を使える。`window.html` はブラウザウィンドウごとに 1 つ読み込まれるため、mod もウィンドウの数だけ動く。`chrome.tabs` のイベントは全ウィンドウ分が届くので、各 mod は自分のウィンドウ（`tab.windowId`）のタブだけを扱う。拡張機能ではワークスペースを操作できないため、mod を選ぶ。
+Vivaldi の UI 自体が Web 技術で作られており、その HTML（`window.html`、古い版では `browser.html`）に自作 JS を読み込ませるのが mod の仕組み。この JS はブラウザ UI の権限で動き、`chrome.tabs` と Vivaldi 独自の `vivaldi.*` API を使える。`window.html` はブラウザウィンドウごとに 1 つ読み込まれるため、mod もウィンドウの数だけ動く。`chrome.tabs` のイベントは全ウィンドウ分が届くので、各 mod は自分のウィンドウ（`chrome.windows.getCurrent` で取得し、`tab.windowId` と比べる）のタブだけを扱う。拡張機能ではワークスペースを操作できないため、mod を選ぶ。
 
 **リポジトリ構成（案）**
 
@@ -67,7 +67,7 @@ matcher と normalize は Vivaldi に依存しない純粋関数にして、Node
 **使う API（実装前に実機で確認、「検証事項」参照）**
 
 - イベント: `chrome.tabs.onCreated`、`chrome.tabs.onUpdated`（`url` / `title` / `status` の変化）
-- ワークスペース一覧: 設定値 `vivaldi.workspaces.list`（`vivaldi.prefs.get` で取得、変更も購読）。戻り値は `{ value, defaultValue, store }` で、一覧は `.value`（要素は `{ id: number, name, icon }`）
+- ワークスペース一覧: 設定値 `vivaldi.workspaces.list`（`vivaldi.prefs.get` で取得）。戻り値は `{ value, defaultValue, store }` で、一覧は `.value`（要素は `{ id: number, name, icon }`）。`vivaldi.prefs.onChanged` の通知の中身は確認できなかったため購読せず、判定のたびに読み直す
 - タブの所属: タブの拡張データ（`vivExtData` の JSON 文字列）内の `workspaceId`（number）
 - 移動: `chrome.tabs.update(tabId, { vivExtData })` で `workspaceId` を書き換える
 
