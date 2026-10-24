@@ -108,7 +108,7 @@ matcher と normalize は Vivaldi に依存しない純粋関数にして、Node
 
 **手動移動の検出（F6）**
 
-mod が移動した直後の `workspaceId` をタブごとに記録する。以後その値と違う `workspaceId` を検出したらユーザーの手動移動とみなし、そのタブには以降触らない。フラグは `vivExtData` 内に独自キーで持たせ、再起動後も残す。
+mod が移動した直後の `workspaceId` をタブごとに記録する。以後その値と違う `workspaceId` を検出したらユーザーの手動移動とみなし、そのタブには以降触らない。検出には `chrome.tabs.onUpdated` の `changeInfo.vivExtData` を使う。新しいタブの作成直後にも `vivExtData` だけの通知が来るため、キーの有無ではなく `workspaceId` の値が変わったかで判断する。フラグは `vivExtData` 内に独自キーで持たせ、再起動後も残す。
 
 ## 重複タブ処理
 

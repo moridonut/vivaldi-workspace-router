@@ -142,6 +142,7 @@ window.spike = (() => {
   await spike.hibernated()    // [6] ハイバネート中のタブで URL/タイトルが取れるか
   await spike.windows()       // [7] ウェブパネル / アプリウィンドウの見分け方
   await spike.titles()        // [8][9] 実タイトルに顧客名が入るか、Celonis の URL 構造
+  await spike.nameCoverage()  // [8] ワークスペース名ごとの一致状況
   spike.watch(90)             // イベントの流れ（タイトル確定の遅れ、手動移動の検出）
   spike.report()              // 結果 JSON をクリップボードへ（顧客名等は含まない）
 [10] アプリバンドルへの書き込みはターミナルで spike/check-bundle.sh を実行。`);
@@ -286,10 +287,17 @@ window.spike = (() => {
       }
       const events = [];
       const t0 = Date.now();
-      const fn = (info) => {
-        const path = info && (info.path || info.name);
-        if (path && !/workspace/i.test(path)) return;
-        events.push({ t: Date.now() - t0, path, valueShape: shape(info && info.value) });
+      const fn = (...args) => {
+        const info = args[0];
+        const path = info && typeof info === 'object' ? info.path || info.name : info;
+        if (typeof path === 'string' && !/workspace/i.test(path)) return;
+        // 2 回目は path も value も undefined だったため、引数の形をそのまま記録する
+        events.push({
+          t: Date.now() - t0,
+          argCount: args.length,
+          argShapes: args.map((a) => shape(a)),
+          path: typeof path === 'string' ? path : undefined,
+        });
         console.log('[prefs.onChanged]', info);
       };
       vivaldi.prefs.onChanged.addListener(fn);
@@ -469,7 +477,7 @@ window.spike = (() => {
         try { h = new URL(u).host; } catch { return null; }
         if (/force\.com$|salesforce\.com$/.test(h)) return 'salesforce';
         if (h === 'docs.google.com') return 'google-docs';
-        if (/atlassian\.net$/.test(h)) return null; // 社内 Confluence は対象外
+        if (/atlassian\.net$|sharepoint\.com$/.test(h)) return null; // 社内 Confluence / SharePoint は対象外
         if (/celonis/.test(h)) return 'celonis';
         return null;
       };
@@ -506,6 +514,31 @@ window.spike = (() => {
       console.table(rows.map((x) => ({ service: x.service, host: x.url.host, path: x.url.path, hash: x.url.hash, hit: x.titleHitCount })));
       console.log('    (ローカル表示のみ) 実タイトル:');
       console.table(local);
+      return r;
+    },
+
+    // [8] ワークスペース名ごとに、タイトル・URL のどこかに出てくるか（名前は出さない）
+    async nameCoverage() {
+      const list = await getWorkspaces();
+      const tabs = (await getAllTabs()).filter((t) => /^https?:/.test(t.url || ''));
+      const r = list.map((w, i) => {
+        const n = norm(w.name);
+        const own = tabs.filter((t) => (extOf(t).data || {}).workspaceId === w.id);
+        return {
+          index: i,
+          nameLength: w.name.length,
+          nameIsAscii: /^[\x00-\x7f]*$/.test(w.name),
+          nameHasSpace: /\s/.test(w.name),
+          tabsInWorkspace: own.length,
+          ownTabsTitleHit: own.filter((t) => norm(t.title).includes(n)).length,
+          ownTabsUrlHit: own.filter((t) => norm(decodeURIComponent(t.url)).includes(n)).length,
+          allTabsTitleHit: tabs.filter((t) => norm(t.title).includes(n)).length,
+        };
+      });
+      results.nameCoverage = r;
+      console.table(r);
+      console.log('    (ローカル表示のみ) index と名前:');
+      console.table(list.map((w, i) => ({ index: i, name: w.name })));
       return r;
     },
 
