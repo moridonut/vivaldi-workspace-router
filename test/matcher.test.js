@@ -161,9 +161,16 @@ test('法人格を除いた結果が短すぎるキーワードも無視する',
   assert.equal(index.warnings.length, 1);
 });
 
-test('minKeywordLength で最短の長さを変えられる', () => {
-  const index = buildIndex([ws(1, '帝都')], { minKeywordLength: 2 });
+test('日本語を含むキーワードは 2 文字から有効', () => {
+  const index = buildIndex([ws(1, '帝都'), ws(2, '株式会社帝')]);
   assert.deepEqual(ids(index, { title: '帝都様 定例', url: 'https://example.com/' }), [1]);
+  assert.equal(index.warnings.length, 1);
+  assert.equal(index.warnings[0].workspace, '株式会社帝');
+});
+
+test('minKeywordLength / minKeywordLengthNonAscii で最短の長さを変えられる', () => {
+  const index = buildIndex([ws(1, 'AB'), ws(2, '帝都')], { minKeywordLength: 2, minKeywordLengthNonAscii: 3 });
+  assert.deepEqual(ids(index, { title: 'AB 帝都', url: 'https://example.com/' }), [1]);
 });
 
 test('ignoreWorkspaces のワークスペースは振り分け先にしない', () => {
@@ -192,6 +199,48 @@ test('一致 0 / 1 / 2 件', () => {
   assert.deepEqual(ids(index, { title: 'Globex renewal', url: 'https://example.com/' }), [2]);
   assert.deepEqual(ids(index, { title: 'Acme vs Globex 比較', url: 'https://example.com/' }).sort(), [1, 2]);
   assert.deepEqual(ids(index, { title: 'Acme 向け', url: 'https://x.example.com/サンプル工業' }).sort(), [1, 3]);
+});
+
+// ---- 名前が重なる案件は長い方を優先 ----------------------------------------
+
+test('重なり: 短い名前が長い名前の一部としてだけ出ていれば長い方だけに一致', () => {
+  const index = buildIndex([ws(1, '帝都'), ws(2, '帝都物流')]);
+  assert.deepEqual(ids(index, { title: '帝都物流様 定例', url: 'https://example.com/' }), [2]);
+  assert.deepEqual(ids(index, { title: '帝都様 定例', url: 'https://example.com/' }), [1]);
+});
+
+test('重なり: 短い名前が単独でも出ていれば両方に一致（conflict）', () => {
+  const index = buildIndex([ws(1, '帝都'), ws(2, '帝都物流')]);
+  assert.deepEqual(ids(index, { title: '帝都 / 帝都物流 合同定例', url: 'https://example.com/' }).sort(), [1, 2]);
+});
+
+test('重なり: 英字キーワードでも長い方を優先', () => {
+  const index = buildIndex([ws(1, 'Acme'), ws(2, 'Acme Japan')]);
+  assert.deepEqual(ids(index, { title: 'ACME JAPAN QBR', url: 'https://example.com/' }), [2]);
+  assert.deepEqual(ids(index, { title: 'ACME QBR', url: 'https://example.com/' }), [1]);
+});
+
+test('重なり: 別名同士でも長い方を優先', () => {
+  const index = buildIndex([ws(1, 'アクメ'), ws(2, 'アクメ物流')], {
+    aliases: { 'アクメ': ['ACME'], 'アクメ物流': ['ACME Logistics'] },
+  });
+  assert.deepEqual(ids(index, { title: 'ACME Logistics 提案', url: 'https://example.com/' }), [2]);
+});
+
+test('重なり: タイトルと URL は別々に判定する', () => {
+  const index = buildIndex([ws(1, 'アクメ'), ws(2, 'アクメ物流')], {
+    aliases: { 'アクメ': ['url:acme.bi.example.com'] },
+  });
+  // URL では アクメ、タイトルでは アクメ物流 → 別の場所なので両方残る
+  assert.deepEqual(
+    ids(index, { title: 'アクメ物流 資料', url: 'https://acme.bi.example.com/x' }).sort(),
+    [1, 2]
+  );
+});
+
+test('重なり: 同じ長さの同じキーワードが 2 つのワークスペースにあれば conflict', () => {
+  const index = buildIndex([ws(1, 'アクメ'), ws(2, 'アクメ物流')], { aliases: { 'アクメ物流': ['アクメ'] } });
+  assert.deepEqual(ids(index, { title: 'アクメ 提案', url: 'https://example.com/' }).sort(), [1, 2]);
 });
 
 // ---- decide ----------------------------------------------------------------
