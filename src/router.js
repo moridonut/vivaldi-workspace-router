@@ -158,7 +158,10 @@ export function createRouter({
     debug('decide', id, d.action, JSON.stringify(tab.title), matches.map((m) => `${m.name}(${m.keywords.join('|')})`).join(', '));
 
     if (d.action === 'none') {
-      if (cfg.dedupeUnmatched) await dedupe(tab, s, current);
+      if (cfg.dedupeUnmatched) {
+        const existing = await findDuplicate(tab, s, current);
+        if (existing) await closeDuplicate(tab, existing);
+      }
       return;
     }
     if (d.action === 'conflict') {
@@ -166,26 +169,36 @@ export function createRouter({
       return;
     }
     const target = matches[0];
-    if (await dedupe(tab, s, d.target)) return;
-    if (d.action === 'stay') return;
+    const existing = await findDuplicate(tab, s, d.target);
+    if (d.action === 'stay') {
+      if (existing) await closeDuplicate(tab, existing);
+      return;
+    }
 
     if (cfg.dryRun) {
       log('[dry-run] move', id, JSON.stringify(tab.title), '→', target.name, `(${target.keywords.join('|')})`);
+      if (existing) await closeDuplicate(tab, existing);
       return;
     }
     log('move', id, JSON.stringify(tab.title), '→', target.name, `(${target.keywords.join('|')})`);
     s.expectedWs = d.target;
     await adapter.updateExt(id, { workspaceId: d.target });
-    if (cfg.switchOnMove) await adapter.activate(id);
+    // 重複があるときも、まずこのタブで移動先へ切り替える。別ワークスペースの既存タブを直接アクティブにすると、
+    // 中身だけ切り替わってタブ一覧が元のワークスペースのままになることがある（実機で確認）
+    if (cfg.switchOnMove || existing) {
+      await adapter.activate(id);
+      await waitUntilActive(id);
+    }
+    if (existing) await closeDuplicate(tab, existing);
   }
 
-  // 同じページが workspaceId のワークスペースにあれば、このタブを閉じて既存タブを前に出す。
+  // 同じページが workspaceId のワークスペースにあり、このタブを閉じてよければ、その既存タブを返す。
   // 閉じるのは mod の読み込み後に作成され、作成から routeWindowMs 以内の、判定中のタブだけ。
   // わざと開いたとみなせるもの（開いた元のタブ自身の複製、閉じた直後の開き直し）は閉じない
-  async function dedupe(tab, s, workspaceId) {
-    if (!cfg.dedupe) return false;
+  async function findDuplicate(tab, s, workspaceId) {
+    if (!cfg.dedupe) return null;
     const key = dedupeKey(tab.url);
-    if (!key) return false;
+    if (!key) return null;
     const others = await adapter.queryTabs(ownWindow.id);
     const duplicates = others.filter(
       (o) =>
@@ -194,30 +207,33 @@ export function createRouter({
         (o.ext || {}).workspaceId === workspaceId &&
         dedupeKey(o.url) === key
     );
-    if (!duplicates.length) return false;
+    if (!duplicates.length) return null;
     const existing = duplicates.find((o) => o.id !== s.openerId);
     if (!existing) {
       debug('duplicate of its opener (e.g. duplicated tab); keeping', tab.id, '→', s.openerId);
-      return false;
+      return null;
     }
     if (s.createdAt === undefined || now() - s.createdAt > cfg.routeWindowMs) {
       debug('duplicate found but tab is too old to close', tab.id, '→', existing.id);
-      return false;
+      return null;
     }
     const closedAt = recentlyClosed.get(key);
     if (closedAt !== undefined && now() - closedAt <= cfg.dedupeReopenGraceMs) {
       log('duplicate reopened right after closing; keeping', tab.id, JSON.stringify(tab.title));
-      return false;
+      return null;
     }
     recentlyClosed.set(key, now());
+    return existing;
+  }
+
+  // 既存タブを前に出してから、このタブを閉じる。どちらも同じワークスペースにある前提
+  async function closeDuplicate(tab, existing) {
     if (cfg.dryRun) {
       log('[dry-run] close duplicate', tab.id, JSON.stringify(tab.title), '→ activate existing', existing.id);
-      return true;
+      return;
     }
     log('close duplicate', tab.id, JSON.stringify(tab.title), '→ activate existing', existing.id);
-    // 既存タブをアクティブにし（別ワークスペースならワークスペースも切り替わる）、反映を待ってから、
-    // 裏に回った新しいタブを閉じる。表示中のタブを閉じると、Vivaldi がワークスペースを切り替えないまま
-    // 別のタブを選び直してしまう
+    // 反映を待ってから、裏に回ったこのタブを閉じる。表示中のタブを閉じると Vivaldi が別のタブを選び直してしまう
     await adapter.activate(existing.id);
     await waitUntilActive(existing.id);
     await adapter.close(tab.id);
@@ -234,7 +250,6 @@ export function createRouter({
         })
         .catch(() => {});
     }, ACTIVATE_VERIFY_MS);
-    return true;
   }
 
   const sleep = (ms) => new Promise((r) => setTimer(r, ms));

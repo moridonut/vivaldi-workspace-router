@@ -327,6 +327,21 @@ test('移動先に同じページがあれば、新しいタブを閉じて既�
   assert.ok(env.state.has(5));
 });
 
+test('移動先に重複があるときも、まず新しいタブを移動先へ移して切り替え、その中で既存タブを前に出してから閉じる', async () => {
+  const env = fakeEnv({ tabs: [{ id: 5, url: SLIDE, title: 'Globex 提案', ext: { workspaceId: WS_B } }] });
+  env.vivaldiReselectsAfterClose = true;
+  await startRouter(env, { switchOnMove: false });
+  await env.create({ id: 10, url: SLIDE, title: 'Globex 提案' });
+  await env.advance(2000);
+  const order = env.calls
+    .filter((c) => ['updateExt', 'activate', 'close'].includes(c[0]))
+    .map((c) => (c[0] === 'updateExt' ? `move:${c[1]}:${c[2].workspaceId}` : `${c[0]}:${c[1]}`));
+  // 別ワークスペースのタブを直接アクティブにすると、Vivaldi のタブ一覧が切り替わらないことがある（実機で確認）
+  assert.deepEqual(order, ['move:10:200', 'activate:10', 'activate:5', 'close:10']);
+  assert.deepEqual(env.closedWhileActive, []);
+  assert.equal(env.state.get(5).active, true);
+});
+
 test('重複処理: 既存タブがアクティブになってから、裏に回った新しいタブを閉じる', async () => {
   const env = fakeEnv({ tabs: [{ id: 5, url: SLIDE, title: 'Globex 提案', ext: { workspaceId: WS_B } }] });
   env.vivaldiReselectsAfterClose = true;
