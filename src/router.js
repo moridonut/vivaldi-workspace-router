@@ -10,6 +10,7 @@ const MANUAL_FLAG = 'wsrManual'; // vivExtData に持たせる独自キー（手
 const ACTIVATE_VERIFY_MS = 300; // 重複処理の後、既存タブがアクティブになったか確かめるまでの時間
 const ACTIVATE_WAIT_MS = 1000; // 既存タブがアクティブになるのを待つ上限
 const POLL_MS = 50;
+const SHORTCUT_DEDUPE_MS = 300; // 同じ押下が DOM と Vivaldi の両方から届いたときに 1 回として扱う時間
 
 const isWebUrl = (u) => /^https?:\/\//i.test(u || '');
 
@@ -29,6 +30,9 @@ export function parseShortcut(text) {
   }
   return sc.code ? sc : null;
 }
+
+const sameShortcut = (a, b) =>
+  !!a && !!b && a.code === b.code && a.meta === b.meta && a.alt === b.alt && a.shift === b.shift && a.ctrl === b.ctrl;
 
 export function matchesShortcut(sc, e) {
   return (
@@ -312,11 +316,25 @@ export function createRouter({
       adapter.onRemoved(onRemoved);
       const shortcut = parseShortcut(cfg.toggleShortcut);
       if (cfg.toggleShortcut && !shortcut) log('config warning invalid toggleShortcut', JSON.stringify(cfg.toggleShortcut));
+      // アドレスバーなど UI にフォーカスがあるときは DOM の keydown、ページにフォーカスがあるときは
+      // Vivaldi のショートカット通知で届く（docs/findings.md M）
+      let lastToggle = { source: null, at: -Infinity };
+      const toggleFrom = (source) => {
+        if (lastToggle.source !== source && now() - lastToggle.at < SHORTCUT_DEDUPE_MS) return;
+        lastToggle = { source, at: now() };
+        setPaused(!paused, { broadcast: true, toast: true });
+      };
       if (shortcut && adapter.onKeyDown) {
         adapter.onKeyDown((e) => {
           if (stopped || !matchesShortcut(shortcut, e)) return;
           e.preventDefault();
-          setPaused(!paused, { broadcast: true, toast: true });
+          toggleFrom('dom');
+        });
+      }
+      if (shortcut && adapter.onKeyboardShortcut) {
+        adapter.onKeyboardShortcut((windowId, combo) => {
+          if (stopped || windowId !== ownWindow.id || !sameShortcut(parseShortcut(combo), shortcut)) return;
+          toggleFrom('vivaldi');
         });
       }
       // 一時停止はウィンドウをまたいで共有する（mod はウィンドウごとに動く）
@@ -452,6 +470,11 @@ export function createVivaldiAdapter() {
       const handler = (e) => fn(e);
       document.addEventListener('keydown', handler, true);
       domListeners.push(() => document.removeEventListener('keydown', handler, true));
+    },
+    // findings M: ページにフォーカスがあるときのキーは (windowId, "Shift+F12", bool, bool, bool) で届く
+    onKeyboardShortcut(fn) {
+      const ev = vivaldi.tabsPrivate && vivaldi.tabsPrivate.onKeyboardShortcut;
+      if (ev) listen(ev, (windowId, combo) => fn(windowId, combo));
     },
     // 同じ UI（chrome-extension://…）のウィンドウ同士で一時停止を共有する
     onPauseBroadcast(fn) {

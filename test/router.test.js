@@ -79,6 +79,9 @@ function fakeEnv({ tabs = [], windowType = 'normal' } = {}) {
     onPauseBroadcast(fn) {
       listeners.pauseBroadcast = fn;
     },
+    onKeyboardShortcut(fn) {
+      listeners.shortcut = fn;
+    },
     broadcastPause(paused) {
       calls.push(['broadcastPause', paused]);
     },
@@ -145,6 +148,10 @@ function fakeEnv({ tabs = [], windowType = 'normal' } = {}) {
       listeners.keydown?.(ev);
       await flush();
       return ev;
+    },
+    async vivaldiShortcut(windowId, combo) {
+      listeners.shortcut?.(windowId, combo);
+      await flush();
     },
     async otherWindowPaused(paused) {
       listeners.pauseBroadcast?.(paused);
@@ -625,5 +632,44 @@ test('ほかのウィンドウで一時停止したら、このウィンドウ�
   assert.equal(router.status().paused, true);
   assert.deepEqual(env.did('broadcastPause'), []);
   await env.otherWindowPaused(false);
+  assert.equal(router.status().paused, false);
+});
+
+test('ページにフォーカスがあるとき: Vivaldi のショートカット通知（自分のウィンドウ）で切り替える', async () => {
+  const env = fakeEnv();
+  const router = await startRouter(env);
+  await env.vivaldiShortcut(WIN, 'Shift+F12');
+  assert.equal(router.status().paused, true);
+  assert.equal(env.did('toast').length, 1);
+  await env.advance(1000);
+  await env.vivaldiShortcut(WIN, 'Shift+F12');
+  assert.equal(router.status().paused, false);
+});
+
+test('Vivaldi のショートカット通知: ほかのウィンドウや別のキーでは切り替えない', async () => {
+  const env = fakeEnv();
+  const router = await startRouter(env);
+  await env.vivaldiShortcut(OTHER_WIN, 'Shift+F12');
+  await env.vivaldiShortcut(WIN, 'F12');
+  await env.vivaldiShortcut(WIN, 'Ctrl+Shift+F12');
+  assert.equal(router.status().paused, false);
+});
+
+test('Vivaldi のショートカット通知: 修飾キーの表記ゆれを許す', async () => {
+  const env = fakeEnv();
+  const router = await startRouter(env, { toggleShortcut: 'Cmd+Shift+9' });
+  await env.vivaldiShortcut(WIN, 'shift+meta+9');
+  assert.equal(router.status().paused, true);
+});
+
+test('同じ押下が DOM と Vivaldi の両方から届いても 1 回として扱う', async () => {
+  const env = fakeEnv();
+  const router = await startRouter(env);
+  await env.key({ shiftKey: true, code: 'F12' });
+  await env.vivaldiShortcut(WIN, 'Shift+F12');
+  assert.equal(router.status().paused, true);
+  await env.advance(1000);
+  await env.vivaldiShortcut(WIN, 'Shift+F12');
+  await env.key({ shiftKey: true, code: 'F12' });
   assert.equal(router.status().paused, false);
 });
