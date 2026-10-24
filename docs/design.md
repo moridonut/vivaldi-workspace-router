@@ -170,6 +170,8 @@ Vivaldi を更新するとバージョン番号付きのフォルダが新しく
 
 launchd の LaunchAgent で `Versions/` フォルダを `WatchPaths` に指定し、変化したら `install.sh` を実行する。plist の生成と登録も `install.sh --agent` で行う。Hammerspoon のパス監視でも代替できるが、Hammerspoon 非起動時にも動く launchd を優先する。
 
+アプリバンドルへの書き込みには、macOS の「アプリ管理」の許可が要る（`docs/findings.md` #10）。ターミナルに許可を付ければ手動の `install.sh` は通るが、launchd から起動した場合に同じ許可が効くかは未確認（同 I）。効かなければ、更新を検知したら通知だけ出し、ユーザーがターミナルから `install.sh` を実行する形に下げる。
+
 **注意点**
 
 - アプリバンドル内を書き換えるため、macOS の署名検証や「アプリ管理」権限で書き込みが拒否される可能性がある。実機で確認し、拒否される場合はターミナルに必要な権限を付与する手順を README に書く。
