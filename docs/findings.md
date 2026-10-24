@@ -136,3 +136,11 @@ DevTools に貼り付けた mod で、`dryRun: false` にして確認した。
 | Shift+F12（アドレスバー / ページ本文） | どちらでも一時停止・再開が切り替わる |
 
 未確認：一時停止のウィンドウ間の共有（`BroadcastChannel`）。貼り付けた mod は 1 つのウィンドウでしか動かないため、Phase 4 でインストールした後に確かめる。
+
+## Phase 4 の実機確認（2026-10-24）
+
+| 確認したこと | 結果 |
+| --- | --- |
+| `./install.sh` → Vivaldi 再起動 | 貼り付けなしで mod が動く |
+| 再起動時に Vivaldi が更新された場合（8.2.4133.87 → .94） | 組み込んだ版が使われなくなり mod が外れた。`./install.sh` を再実行して直った（更新のたびに外れることを実機で確認） |
+| LaunchAgent から `install.sh --auto`（mod を外した状態） | 書き込みは `Operation not permitted`（I）。「入れ直しますか？」のダイアログ → 「入れ直す」で iTerm2 が開き、`install.sh` で入れ直せた |
