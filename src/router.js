@@ -24,6 +24,7 @@ export function parseShortcut(text) {
     else if (part === 'ctrl' || part === 'control') sc.ctrl = true;
     else if (/^[a-z]$/.test(part)) sc.code = `Key${part.toUpperCase()}`;
     else if (/^[0-9]$/.test(part)) sc.code = `Digit${part}`;
+    else if (/^f([1-9]|1[0-9]|2[0-4])$/.test(part)) sc.code = part.toUpperCase();
     else return null;
   }
   return sc.code ? sc : null;
@@ -62,7 +63,7 @@ export function createRouter({
     ignoreWorkspaces: [],
     aliases: {},
     debug: false,
-    toggleShortcut: 'Cmd+Alt+Shift+P',
+    toggleShortcut: 'Shift+F12',
     ...config,
   };
   const debug = (...a) => cfg.debug && log(...a);

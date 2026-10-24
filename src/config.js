@@ -17,6 +17,6 @@ export default {
   aliases: {
     // ワークスペース名: 追加キーワード（url: 始まりは URL にだけ照合）
   },
-  toggleShortcut: 'Cmd+Alt+Shift+P', // F8: 一時停止 / 再開（Cmd / Alt / Shift / Ctrl + 英数字 1 文字）
+  toggleShortcut: 'Shift+F12', // F8: 一時停止 / 再開（Cmd / Alt / Shift / Ctrl + 英数字 1 文字か F1〜F24）
   debug: false,              // true で判定ログを UI の DevTools コンソールへ
 };

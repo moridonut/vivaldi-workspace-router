@@ -599,7 +599,7 @@ window.spike = (() => {
       const events = [];
       const t0 = Date.now();
       const onKey = (e) => {
-        if (!(e.metaKey || e.ctrlKey || e.altKey)) return; // 修飾キーなしの入力は記録しない
+        if (!(e.metaKey || e.ctrlKey || e.altKey || /^F\d+$/.test(e.code))) return; // 修飾キーなしの文字入力は記録しない
         const r = { t: Date.now() - t0, src: 'document.keydown', code: e.code, meta: e.metaKey, alt: e.altKey, shift: e.shiftKey, ctrl: e.ctrlKey, focus: document.activeElement && document.activeElement.tagName };
         events.push(r);
         console.log('[keys]', r);
@@ -612,7 +612,7 @@ window.spike = (() => {
         console.log('[keys]', r);
       };
       if (ks) ks.addListener(onShortcut);
-      console.log(`${seconds}秒間キーを記録します。次の 2 通りで ⌘⌥⇧P を押してください:
+      console.log(`${seconds}秒間キーを記録します。次の 2 通りで Shift+F12 を押してください:
   a) アドレスバーをクリックしてから押す
   b) Slides などのページ本文をクリックしてから押す`);
       setTimeout(() => {

@@ -582,13 +582,15 @@ test('parseShortcut / matchesShortcut', () => {
   assert.equal(matchesShortcut(sc, { metaKey: true, altKey: false, shiftKey: true, ctrlKey: false, code: 'KeyP' }), false);
   assert.equal(matchesShortcut(sc, { metaKey: true, altKey: true, shiftKey: true, ctrlKey: true, code: 'KeyP' }), false);
   assert.deepEqual(parseShortcut('ctrl+shift+9'), { meta: false, alt: false, shift: true, ctrl: true, code: 'Digit9' });
+  assert.deepEqual(parseShortcut('Shift+F12'), { meta: false, alt: false, shift: true, ctrl: false, code: 'F12' });
+  assert.equal(parseShortcut('F25'), null);
   assert.equal(parseShortcut(''), null);
 });
 
 test('ショートカットで一時停止・再開し、ほかのウィンドウへ知らせて表示を出す', async () => {
   const env = fakeEnv();
   const router = await startRouter(env);
-  const ev = await env.key({ metaKey: true, altKey: true, shiftKey: true, code: 'KeyP' });
+  const ev = await env.key({ shiftKey: true, code: 'F12' });
   assert.equal(ev.prevented, true);
   assert.equal(router.status().paused, true);
   assert.deepEqual(env.did('broadcastPause'), [['broadcastPause', true]]);
@@ -596,7 +598,7 @@ test('ショートカットで一時停止・再開し、ほかのウィンド�
   await env.create({ id: 10, url: 'https://example.com/', title: 'Globex' });
   await env.advance(800);
   assert.equal(workspaceOf(env, 10), WS_A);
-  await env.key({ metaKey: true, altKey: true, shiftKey: true, code: 'KeyP' });
+  await env.key({ shiftKey: true, code: 'F12' });
   assert.equal(router.status().paused, false);
   assert.deepEqual(env.did('broadcastPause').at(-1), ['broadcastPause', false]);
 });
@@ -604,7 +606,7 @@ test('ショートカットで一時停止・再開し、ほかのウィンド�
 test('ほかのキーでは何もしない', async () => {
   const env = fakeEnv();
   const router = await startRouter(env);
-  const ev = await env.key({ metaKey: true, shiftKey: true, code: 'KeyP' });
+  const ev = await env.key({ code: 'F12' });
   assert.equal(ev.prevented, false);
   assert.equal(router.status().paused, false);
 });
