@@ -607,7 +607,9 @@ window.spike = (() => {
       document.addEventListener('keydown', onKey, true);
       const ks = vivaldi.tabsPrivate && vivaldi.tabsPrivate.onKeyboardShortcut;
       const onShortcut = (...args) => {
-        const r = { t: Date.now() - t0, src: 'tabsPrivate.onKeyboardShortcut', argShapes: args.map((a) => shape(a)), args };
+        // キー名や ID だけで顧客の情報は含まないので、短い値はそのまま記録する
+        const values = args.map((a) => (typeof a === 'string' && a.length > 40 ? shape(a) : typeof a === 'object' ? shape(a) : a));
+        const r = { t: Date.now() - t0, src: 'tabsPrivate.onKeyboardShortcut', values, focus: document.activeElement && document.activeElement.tagName };
         events.push(r);
         console.log('[keys]', r);
       };
@@ -618,7 +620,8 @@ window.spike = (() => {
       setTimeout(() => {
         document.removeEventListener('keydown', onKey, true);
         if (ks) ks.removeListener(onShortcut);
-        results.keys = events.map(({ args, ...rest }) => rest);
+        results.keys = events;
+        call(chrome.windows.getCurrent, {}).then((w) => (results.keysWindowId = w.id));
         console.log('keys 終了', events.length, 'events');
       }, seconds * 1000);
     },
